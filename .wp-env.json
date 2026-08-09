@@ -1,0 +1,15 @@
+{
+	"phpVersion": "7.4",
+	"plugins": [ ".", "WordPress/two-factor" ],
+	"env": {
+		"tests": {
+			"config": {
+				"WP_DEBUG": true,
+				"WP_TESTS_EMAIL": "admin@example.org",
+				"WP_TESTS_DOMAIN": "example.org",
+				"WP_SITEURL": "https://example.org",
+				"WP_HOME": "https://example.org"
+			}
+		}
+	}
+}

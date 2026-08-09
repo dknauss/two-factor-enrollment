@@ -1,0 +1,33 @@
+{
+	"name": "dknauss/two-factor-enrollment",
+	"type": "wordpress-plugin",
+	"description": "Two-factor enrollment onboarding flow for the Two Factor plugin.",
+	"license": "GPL-2.0-or-later",
+	"config": {
+		"sort-packages": true,
+		"platform": {
+			"php": "7.2.24"
+		},
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true
+		}
+	},
+	"minimum-stability": "dev",
+	"prefer-stable": true,
+	"require": {
+		"php": ">=7.2.24|^8"
+	},
+	"require-dev": {
+		"automattic/vipwpcs": "^3.0",
+		"dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+		"phpcompatibility/phpcompatibility-wp": "3.0.0-alpha2",
+		"phpunit/phpunit": "^8.5|^9.6",
+		"wp-coding-standards/wpcs": "^3.3",
+		"yoast/phpunit-polyfills": "^4.0"
+	},
+	"scripts": {
+		"lint": "phpcs",
+		"test": "phpunit",
+		"format": "phpcbf"
+	}
+}
