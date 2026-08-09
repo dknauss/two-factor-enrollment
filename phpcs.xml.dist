@@ -15,13 +15,19 @@
 
 	<rule ref="WordPress.WP.I18n">
 		<properties>
-			<property name="text_domain" type="array" value="two-factor-enrollment"/>
+			<property name="text_domain" type="array">
+				<element value="two-factor-enrollment"/>
+			</property>
 		</properties>
 	</rule>
 
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
 		<properties>
-			<property name="prefixes" type="array" value="two_factor_enrollment,Two_Factor_Enrollment,TWO_FACTOR_ENROLLMENT"/>
+			<property name="prefixes" type="array">
+				<element value="two_factor_enrollment"/>
+				<element value="Two_Factor_Enrollment"/>
+				<element value="TWO_FACTOR_ENROLLMENT"/>
+			</property>
 		</properties>
 		<!-- $_tests_dir mirrors the WP core PHPUnit bootstrap convention (see WordPress/two-factor tests/bootstrap.php); it is not a plugin global. -->
 		<exclude-pattern>tests/bootstrap.php</exclude-pattern>
