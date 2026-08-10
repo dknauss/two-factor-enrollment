@@ -583,9 +583,30 @@ class Two_Factor_Enrollment_Onboarding {
 
 			/* The WordPress.org logo above the login form is an off-site
 			 * link sitting directly above one-time recovery codes; following
-			 * it would abandon this screen and lose the codes for good. */
-			body.login-action-two_factor_enrollment_onboarding #login h1 {
-				display: none;
+			 * it would abandon this screen and lose the codes for good.
+			 *
+			 * This hides the link visually rather than removing the <h1>
+			 * itself. WordPress 7.0 gives the page a second, separate
+			 * <h1 class="screen-reader-text"> outside #login, but on 6.5-6.8
+			 * (the stated minimum WordPress version) #login h1 is the only
+			 * heading on the page; `display: none` on the whole element
+			 * would strip it from the accessibility tree entirely. The clip
+			 * technique below mirrors the .screen-reader-text rule
+			 * WordPress core itself uses: the link (and the logo image it
+			 * carries) disappears from the screen and cannot be clicked,
+			 * but the heading and its text remain for assistive
+			 * technology. */
+			body.login-action-two_factor_enrollment_onboarding #login h1 a {
+				border: 0;
+				clip: rect(1px, 1px, 1px, 1px);
+				clip-path: inset(50%);
+				height: 1px;
+				margin: -1px;
+				overflow: hidden;
+				padding: 0;
+				position: absolute;
+				width: 1px;
+				word-wrap: normal;
 			}
 
 			/* wp-includes/css/buttons.css sets `.wp-core-ui .button` to

@@ -849,6 +849,13 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	 * Requirement 1: the WordPress.org logo sits directly above one-time
 	 * recovery codes and links off-site; following it loses them for good.
 	 * Hiding it must be scoped to this screen's body class alone.
+	 *
+	 * This targets `#login h1 a`, not `#login h1` itself, and checks for the
+	 * clip/absolute-position technique rather than `display: none`. On
+	 * WordPress 6.5-6.8 (the README's stated floor) that `<h1>` is the only
+	 * heading on the page; hiding the whole element with `display: none`
+	 * would strip it from the accessibility tree, not just the screen. See
+	 * inline_style()'s docblock for the full reasoning.
 	 */
 	public function test_login_enqueue_scripts_hides_the_wordpress_logo_for_this_screen_only() {
 		wp_register_style( 'login', false, array(), '1.0' );
@@ -861,6 +868,14 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
 
 		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding #login h1 a\s*\{[^}]*clip:/',
+			$style
+		);
+
+		// The <h1> element itself must not be hidden outright -- only the
+		// off-site link inside it -- or a 6.5-6.8 install loses its only
+		// heading.
+		$this->assertDoesNotMatchRegularExpression(
 			'/login-action-two_factor_enrollment_onboarding #login h1\s*\{[^}]*display:\s*none/',
 			$style
 		);
