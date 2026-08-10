@@ -792,7 +792,7 @@ Create `includes/class-two-factor-enrollment-gate.php`:
  *
  * Two_Factor_Core::filter_authenticate() suppresses the auth cookie for any
  * user who is using two-factor. By making Email the resolved provider for a
- * user who must enroll, enrollment happens inside core's existing challenge,
+ * user who must enroll, enrollment happens inside Two Factor's existing challenge,
  * before any cookie is issued.
  */
 class Two_Factor_Enrollment_Gate {

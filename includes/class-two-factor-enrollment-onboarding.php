@@ -428,10 +428,10 @@ class Two_Factor_Enrollment_Onboarding {
 		 * hand here, deliberately. Two_Factor_Core::enable_provider_for_user()
 		 * reads the current list via get_enabled_providers_for_user(), which
 		 * fires this plugin's own two_factor_enabled_providers_for_user
-		 * filter — so using the core API would persist whatever the gate
+		 * filter — so using Two Factor's own API would persist whatever the gate
 		 * injected at runtime, and the injection-is-runtime-only invariant is
 		 * what lets this plugin be removed without a trace. Do not "simplify"
-		 * this to the core API.
+		 * this to Two Factor's own API.
 		 */
 		$enabled = get_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true );
 
@@ -476,7 +476,7 @@ class Two_Factor_Enrollment_Onboarding {
 	/**
 	 * Build a `data:` URI that downloads the codes as a text file.
 	 *
-	 * Two Factor core builds its own download link the same way (see
+	 * Two Factor builds its own download link the same way (see
 	 * Two_Factor_Backup_Codes::rest_generate_codes()). Reusing the pattern
 	 * keeps the download working with JavaScript off or unavailable: this
 	 * plugin does ship a small inline script and stylesheet for this screen

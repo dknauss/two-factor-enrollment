@@ -16,8 +16,8 @@ A standalone WordPress add-on plugin that provides the 2FA enrollment experience
 described in upstream issue #813, without owning any enforcement policy of its own.
 
 The central design decision: **the second factor is proven before any auth cookie
-is issued, by pre-enabling the Email provider so that WordPress core's existing
-two-factor login challenge performs the enrollment.** Confirming the emailed code
+is issued, by pre-enabling the Email provider so that Two Factor's existing
+login challenge performs the enrollment.** Confirming the emailed code
 proves mailbox control and enrolls the user in the same step. No password-only
 session is ever created on the required path.
 
@@ -50,7 +50,7 @@ The upstream work is decomposed across several open issues:
 Existing implementations that inform this design:
 
 - **[Require-Email-2FA](https://github.com/dknauss/Require-Email-2FA)** — enables the
-  Email provider for every user so core's login challenge applies to all accounts.
+  Email provider for every user so Two Factor's login challenge applies to all accounts.
   Targets by *exclusion* (everyone, minus excluded roles). No admin UI. This spec
   deliberately reuses its core insight.
 - **WordPress VIP** — `wpcom_vip_is_two_factor_forced`.
@@ -160,8 +160,8 @@ Bootstrap `two-factor-enrollment.php` carries `Requires Plugins: two-factor`
    `is_user_using_two_factor() === true`, and adds
    `send_auth_cookies => __return_false`.
    **No auth cookie is issued.**
-4. `Two_Factor_Core::wp_login()` renders core's existing Email challenge and exits.
-5. The user enters the emailed code. Core validates it, issues the auth cookie, and
+4. `Two_Factor_Core::wp_login()` renders Two Factor's existing Email challenge and exits.
+5. The user enters the emailed code. Two Factor validates it, issues the auth cookie, and
    stamps `two-factor-login` and `two-factor-provider` on the session.
 6. The gate persists the enrollment: Email is written to
    `ENABLED_PROVIDERS_USER_META_KEY` and `PROVIDER_USER_META_KEY` on
@@ -169,7 +169,7 @@ Bootstrap `two-factor-enrollment.php` carries `Requires Plugins: two-factor`
    profile, and no longer dependent on the runtime filter.
 7. `is_user_using_two_factor()` is now true. Enrollment is complete.
 
-Steps 3 through 5 are entirely core's existing, already-audited code path. This
+Steps 3 through 5 are entirely Two Factor's existing, already-audited code path. This
 plugin contributes the injection in step 2 and the persistence in step 6.
 
 Note the ordering of steps 5 and 6: the cookie is issued *before* the enrollment is
@@ -278,7 +278,7 @@ sticky by construction and cannot be shed accidentally.
 
 **Layer 4 · Completion.** On successful verification: clear the pending flag
 explicitly, rotate the session token so the password-only token cannot be replayed,
-and stamp `two-factor-login` / `two-factor-provider` on the new session so core's
+and stamp `two-factor-login` / `two-factor-provider` on the new session so Two Factor's
 revalidation grace computes correctly.
 
 **Residual risk.** On the fallback path a password-only cookie exists between login

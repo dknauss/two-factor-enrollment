@@ -196,5 +196,5 @@ chooser, and here is the attack that motivates it" — alongside the earlier
 comment on the enrollment race and email-first enrollment. What remains open in
 that thread is Timothy Jacobs's suggestion of a login-interstitial framework for
 enforcing requirements at login: worth answering with the finding that
-email-first enrollment needs no interstitial, because it completes inside core's
+email-first enrollment needs no interstitial, because it completes inside Two Factor's
 existing challenge before any auth cookie is issued.

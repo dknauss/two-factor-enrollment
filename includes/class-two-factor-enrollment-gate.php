@@ -1,6 +1,6 @@
 <?php
 /**
- * Injects the Email provider so core performs enrollment during login.
+ * Injects the Email provider so Two Factor performs enrollment during login.
  *
  * @package Two_Factor_Enrollment
  */
@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * Two_Factor_Core::filter_authenticate() suppresses the auth cookie for any
  * user who is using two-factor. By making Email the resolved provider for a
- * user who must enroll, enrollment happens inside core's existing challenge,
+ * user who must enroll, enrollment happens inside Two Factor's existing challenge,
  * before any cookie is issued.
  */
 class Two_Factor_Enrollment_Gate {
@@ -200,10 +200,10 @@ class Two_Factor_Enrollment_Gate {
 		 * hand here, deliberately. Two_Factor_Core::enable_provider_for_user()
 		 * reads the current list via get_enabled_providers_for_user(), which
 		 * fires this plugin's own two_factor_enabled_providers_for_user
-		 * filter — so using the core API would persist the runtime-injected
+		 * filter — so using Two Factor's own API would persist the runtime-injected
 		 * Email entry and destroy the invariant that the injection leaves no
 		 * trace until the challenge is actually passed. Do not "simplify"
-		 * this to the core API.
+		 * this to Two Factor's own API.
 		 */
 		$enabled = get_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true );
 
