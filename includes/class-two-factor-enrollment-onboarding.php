@@ -743,6 +743,23 @@ class Two_Factor_Enrollment_Onboarding {
 	 * nothing. The download link needs none of this and keeps working
 	 * either way.
 	 *
+	 * Passing feature detection only proves navigator.clipboard.writeText
+	 * exists, not that a call to it will succeed: a clipboard-write
+	 * permissions policy, a cross-origin iframe, an unfocused document, or
+	 * the user simply denying the prompt can all still reject the promise.
+	 * The .catch() below is not a no-op for that reason -- it swaps the
+	 * button to a distinct failure label and updates the status span so the
+	 * user is told the copy did not happen and is pointed at the download
+	 * button, which does not depend on any of this.
+	 *
+	 * The status span is a separate element from the button, not an
+	 * aria-live region on the button itself, because setting
+	 * button.disabled while the button holds focus would forcibly move
+	 * keyboard focus to <body>. The label swap on the button is feedback
+	 * enough for sighted users; the sibling status span (role="status", so
+	 * implicitly aria-live="polite") is what a screen reader announces,
+	 * without ever touching focus or disabling the control.
+	 *
 	 * This is a static string with no interpolated data of any kind -- the
 	 * translated labels and the codes themselves live in the markup's data
 	 * attributes, already escaped there with esc_attr() (and, for the codes
@@ -768,27 +785,43 @@ class Two_Factor_Enrollment_Onboarding {
 					return;
 				}
 
+				var status = document.querySelector( ".two-factor-enrollment-copy-status" );
+				var resetTimer = null;
+
+				var announce = function ( label, statusText ) {
+					var originalLabel = button.getAttribute( "data-default-label" );
+
+					window.clearTimeout( resetTimer );
+
+					button.textContent = label;
+
+					if ( status ) {
+						status.textContent = statusText;
+					}
+
+					resetTimer = window.setTimeout( function () {
+						button.textContent = originalLabel;
+
+						if ( status ) {
+							status.textContent = "";
+						}
+					}, 2000 );
+				};
+
 				button.hidden = false;
 
 				button.addEventListener( "click", function () {
 					var payload = JSON.parse( button.getAttribute( "data-codes-payload" ) );
 
 					navigator.clipboard.writeText( payload ).then( function () {
-						var originalLabel = button.getAttribute( "data-default-label" );
-						var copiedLabel = button.getAttribute( "data-copied-label" );
-
-						button.textContent = copiedLabel;
-						button.disabled = true;
-
-						window.setTimeout( function () {
-							button.textContent = originalLabel;
-							button.disabled = false;
-						}, 2000 );
+						announce( button.getAttribute( "data-copied-label" ), button.getAttribute( "data-copied-status" ) );
 					} ).catch( function () {
 						// The feature-detect above only confirms the API exists, not that
-						// a write will succeed (a permissions policy can still deny it).
-						// The download link is the real fallback; this only prevents an
-						// unhandled rejection from reaching the console.
+						// a write will succeed (a permissions policy, a cross-origin
+						// frame, an unfocused document, or a user denial can still
+						// reject it). Tell the user nothing was copied and point them at
+						// the download button, which always works.
+						announce( button.getAttribute( "data-failed-label" ), button.getAttribute( "data-failed-status" ) );
 					} );
 				} );
 			} )();
@@ -850,15 +883,37 @@ class Two_Factor_Enrollment_Onboarding {
 						 * that. This is the "properly escaped for its context" rule
 						 * the brief calls out, and it is why this is wp_json_encode()
 						 * rather than hand-built string concatenation.
+						 *
+						 * wp_json_encode() can return false (e.g. a payload containing
+						 * invalid UTF-8). Practically unreachable here -- the payload is
+						 * this plugin's own freshly generated backup codes, never
+						 * arbitrary input -- but esc_attr( false ) is '', and
+						 * JSON.parse( '' ) throws uncaught in the click handler.
+						 * The fallback below (a valid JSON string) costs nothing and
+						 * keeps that failure mode from ever reaching the browser. It
+						 * is written as an explicit if(), not the `?:` short-ternary
+						 * form, only because the project coding standard forbids
+						 * short ternaries; the behavior is the same either way, and
+						 * on the PHP 7.2 floor both forms are available (`??=` is
+						 * not, and is not used here).
 						 */
+						$codes_payload_json = wp_json_encode( self::clipboard_payload( $codes ) );
+
+						if ( false === $codes_payload_json ) {
+							$codes_payload_json = '""';
+						}
 						?>
-						<button type="button" class="button two-factor-enrollment-copy" hidden aria-live="polite"
+						<button type="button" class="button two-factor-enrollment-copy" hidden
 							data-default-label="<?php echo esc_attr__( 'Copy codes', 'two-factor-enrollment' ); ?>"
 							data-copied-label="<?php echo esc_attr__( 'Copied!', 'two-factor-enrollment' ); ?>"
-							data-codes-payload="<?php echo esc_attr( wp_json_encode( self::clipboard_payload( $codes ) ) ); ?>"
+							data-copied-status="<?php echo esc_attr__( 'Codes copied to the clipboard.', 'two-factor-enrollment' ); ?>"
+							data-failed-label="<?php echo esc_attr__( "Couldn't copy", 'two-factor-enrollment' ); ?>"
+							data-failed-status="<?php echo esc_attr__( "Couldn't copy the codes automatically. Use the download button instead.", 'two-factor-enrollment' ); ?>"
+							data-codes-payload="<?php echo esc_attr( $codes_payload_json ); ?>"
 						>
 							<?php esc_html_e( 'Copy codes', 'two-factor-enrollment' ); ?>
 						</button>
+						<span class="two-factor-enrollment-copy-status screen-reader-text" role="status"></span>
 					</p>
 				</section>
 			<?php endif; ?>

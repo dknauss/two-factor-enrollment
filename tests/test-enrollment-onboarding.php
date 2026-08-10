@@ -625,7 +625,10 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	 * The copy button is an addition, never a replacement: it only appears
 	 * alongside real codes, ships hidden by default (see
 	 * test_login_enqueue_scripts_ships_the_copy_button_hidden_by_default()),
-	 * and is a real <button>, not a click handler bolted onto a <div>.
+	 * and is a real <button>, not a click handler bolted onto a <div>. It
+	 * carries no aria-live of its own — see
+	 * test_render_body_includes_a_status_span_for_copy_feedback() for where
+	 * that lives instead, and why.
 	 */
 	public function test_render_body_includes_a_copy_button_when_codes_are_present() {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
@@ -633,12 +636,43 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$this->assertStringContainsString( '<button type="button" class="button two-factor-enrollment-copy" hidden', $html );
 		$this->assertStringContainsString( 'data-default-label="Copy codes"', $html );
 		$this->assertStringContainsString( 'data-copied-label="Copied!"', $html );
+		$this->assertStringNotContainsString( 'aria-live', $html );
+	}
+
+	/**
+	 * The empty .catch() finding: a rejected clipboard write (a permissions
+	 * policy denial, a cross-origin frame, an unfocused document) must not
+	 * leave the user with silent nothing. The button needs a distinct
+	 * failure label and status text pointing at the always-working download
+	 * button, both provided as data attributes for the inline script to
+	 * read.
+	 */
+	public function test_render_body_copy_button_carries_failure_feedback_data_attributes() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( 'data-failed-label="Couldn&#039;t copy"', $html );
+		$this->assertStringContainsString( 'download button instead', $html );
+	}
+
+	/**
+	 * Requirement 7's other half: setting button.disabled while the button
+	 * holds focus would forcibly move keyboard focus to <body>, so
+	 * copy/failure feedback is announced via a sibling status element
+	 * instead of an aria-live region on the button itself. role="status" is
+	 * implicitly aria-live="polite" without needing the attribute spelled
+	 * out, and screen-reader-text keeps it inaudible-but-present rather than
+	 * a second visible message competing with the button's own label swap.
+	 */
+	public function test_render_body_includes_a_status_span_for_copy_feedback() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( '<span class="two-factor-enrollment-copy-status screen-reader-text" role="status">', $html );
 	}
 
 	/**
 	 * No codes, nothing to copy: the whole codes section — download link
 	 * included — is already omitted when there are no codes to show, and the
-	 * copy button must not be an exception.
+	 * copy button and its status span must not be exceptions.
 	 */
 	public function test_render_body_omits_the_copy_button_when_there_are_no_codes() {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
