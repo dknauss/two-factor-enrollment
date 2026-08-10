@@ -35,21 +35,7 @@ class Two_Factor_Enrollment {
 	 * @return WP_User|false
 	 */
 	public static function fetch_user( $user = null ) {
-		if ( $user instanceof WP_User ) {
-			return $user->exists() ? $user : false;
-		}
-
-		if ( null === $user ) {
-			$user = get_current_user_id();
-		}
-
-		if ( ! is_numeric( $user ) || (int) $user < 1 ) {
-			return false;
-		}
-
-		$user = get_user_by( 'id', (int) $user );
-
-		return ( $user instanceof WP_User && $user->exists() ) ? $user : false;
+		return Two_Factor_Core::fetch_user( $user );
 	}
 
 	/**

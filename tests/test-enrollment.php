@@ -18,6 +18,7 @@ class Tests_Two_Factor_Enrollment extends WP_UnitTestCase {
 		remove_all_filters( 'two_factor_enrollment_required' );
 		remove_all_filters( 'two_factor_enrollment_deferrable' );
 		remove_all_filters( 'two_factor_providers' );
+		wp_set_current_user( 0 );
 		parent::tear_down();
 	}
 
@@ -87,5 +88,68 @@ class Tests_Two_Factor_Enrollment extends WP_UnitTestCase {
 		);
 
 		$this->assertFalse( Two_Factor_Enrollment::email_provider_available() );
+	}
+
+	public function test_fetch_user_given_user_object() {
+		$user   = get_user_by( 'id', $this->user_id );
+		$result = Two_Factor_Enrollment::fetch_user( $user );
+
+		$this->assertInstanceOf( 'WP_User', $result );
+		$this->assertSame( $this->user_id, $result->ID );
+	}
+
+	public function test_fetch_user_given_non_existent_user_object() {
+		$user   = new WP_User( 999999 );
+		$result = Two_Factor_Enrollment::fetch_user( $user );
+
+		$this->assertFalse( $result );
+	}
+
+	public function test_fetch_user_given_null_resolves_to_current_user() {
+		wp_set_current_user( $this->user_id );
+		$result = Two_Factor_Enrollment::fetch_user( null );
+
+		$this->assertInstanceOf( 'WP_User', $result );
+		$this->assertSame( $this->user_id, $result->ID );
+	}
+
+	public function test_fetch_user_given_null_returns_false_without_current_user() {
+		wp_set_current_user( 0 );
+		$result = Two_Factor_Enrollment::fetch_user( null );
+
+		$this->assertFalse( $result );
+	}
+
+	public function test_fetch_user_given_non_numeric_string() {
+		$result = Two_Factor_Enrollment::fetch_user( 'abc' );
+
+		$this->assertFalse( $result );
+	}
+
+	public function test_is_deferrable_false_for_invalid_user_even_when_filtered() {
+		add_filter( 'two_factor_enrollment_deferrable', '__return_true' );
+		$this->assertFalse( Two_Factor_Enrollment::is_deferrable( 999999 ) );
+	}
+
+	public function test_is_complete_false_for_invalid_user() {
+		$this->assertFalse( Two_Factor_Enrollment::is_complete( 999999 ) );
+	}
+
+	public function test_is_deferrable_filter_receives_user_object() {
+		$seen = null;
+		add_filter(
+			'two_factor_enrollment_deferrable',
+			function ( $deferrable, $user ) use ( &$seen ) {
+				$seen = $user;
+				return $deferrable;
+			},
+			10,
+			2
+		);
+
+		Two_Factor_Enrollment::is_deferrable( $this->user_id );
+
+		$this->assertInstanceOf( 'WP_User', $seen );
+		$this->assertSame( $this->user_id, $seen->ID );
 	}
 }
