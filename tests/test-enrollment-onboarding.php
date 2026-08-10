@@ -1575,6 +1575,79 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		);
 	}
 
+	/*
+	 * ---------------------------------------------------------------------
+	 * The authenticator offer is conditional on TOTP being available.
+	 *
+	 * maybe_generate_backup_codes() already refuses to offer backup codes
+	 * when Two_Factor_Backup_Codes is filtered out site-wide, for the same
+	 * reason: offering a method the site does not have sends the user to a
+	 * profile screen with nothing on it. The upgrade offer had no such
+	 * check, and the status chip made it worse — the screen now asserts a
+	 * state ("Not set up") for a method that is not on offer at all.
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * The offer renders on an ordinary install, where TOTP is registered.
+	 * Without this the test below could pass against a render_body() that
+	 * had simply dropped the section altogether.
+	 */
+	public function test_render_body_offers_the_authenticator_app_when_totp_is_available() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringContainsString( 'Want something faster?', $html );
+		$this->assertStringContainsString( 'two-factor-enrollment-method', $html );
+	}
+
+	/**
+	 * Filtered out site-wide, the whole section goes: heading, chip, icon,
+	 * prose and the link to a profile screen that would have nothing on it.
+	 */
+	public function test_render_body_omits_the_authenticator_offer_when_totp_is_disabled_site_wide() {
+		add_filter(
+			'two_factor_providers',
+			function ( $providers ) {
+				unset( $providers['Two_Factor_Totp'] );
+
+				return $providers;
+			}
+		);
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		remove_all_filters( 'two_factor_providers' );
+
+		$this->assertStringNotContainsString( 'Want something faster?', $html );
+		$this->assertStringNotContainsString( 'Authenticator app', $html );
+		$this->assertStringNotContainsString( 'Not set up', $html );
+		$this->assertStringNotContainsString( 'two-factor-enrollment-method', $html );
+	}
+
+	/**
+	 * Dropping the offer must not take the rest of the screen with it. The
+	 * codes and the way out are the parts a user cannot afford to lose.
+	 */
+	public function test_render_body_keeps_the_codes_and_continue_when_the_offer_is_omitted() {
+		add_filter(
+			'two_factor_providers',
+			function ( $providers ) {
+				unset( $providers['Two_Factor_Totp'] );
+
+				return $providers;
+			}
+		);
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		remove_all_filters( 'two_factor_providers' );
+
+		$this->assertStringContainsString( 'aaaa1111', $html );
+		$this->assertStringContainsString( 'Save your backup codes', $html );
+		$this->assertStringContainsString( 'two-factor-enrollment-continue-button', $html );
+		$this->assertStringContainsString( 'two-factor-enrollment-acknowledge-input', $html );
+	}
+
 	/**
 	 * The paragraph-class rules that set a property the generic p rule also
 	 * sets, and therefore have to outrank it.

@@ -448,6 +448,32 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
+	 * Whether an authenticator app is something this site can actually offer.
+	 *
+	 * The same check maybe_generate_backup_codes() makes for Backup Codes,
+	 * for the same reason. An administrator can remove any provider site-wide
+	 * through the 'two_factor_providers' filter, and offering a method that
+	 * has been removed sends the user to a profile screen with nothing on it
+	 * — worse now that the offer carries a status chip, because the screen
+	 * then asserts a state for a method the site does not have.
+	 *
+	 * This is presentation only. Nothing about enrollment depends on it: the
+	 * required path never offers a choice of provider, and this section is an
+	 * optional upgrade the user can take later or not at all.
+	 *
+	 * @return bool
+	 */
+	public static function totp_available() {
+		if ( ! class_exists( 'Two_Factor_Totp' ) ) {
+			return false;
+		}
+
+		$providers = Two_Factor_Core::get_providers();
+
+		return isset( $providers['Two_Factor_Totp'] );
+	}
+
+	/**
 	 * Build a `data:` URI that downloads the codes as a text file.
 	 *
 	 * Two Factor core builds its own download link the same way (see
@@ -1160,6 +1186,7 @@ class Two_Factor_Enrollment_Onboarding {
 				</section>
 			<?php endif; ?>
 
+			<?php if ( self::totp_available() ) : ?>
 			<section class="two-factor-enrollment-section">
 				<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
 
@@ -1204,6 +1231,7 @@ class Two_Factor_Enrollment_Onboarding {
 					</a>
 				</p>
 			</section>
+			<?php endif; ?>
 
 			<?php if ( ! empty( $codes ) ) : ?>
 				<?php
