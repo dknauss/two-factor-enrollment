@@ -11,12 +11,20 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 
 	public function set_up() {
 		parent::set_up();
-		$this->user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		$this->user_id = self::factory()->user->create(
+			array(
+				'role'       => 'editor',
+				'user_email' => 'editor@example.org',
+			)
+		);
+		reset_phpmailer_instance();
 	}
 
 	public function tear_down() {
 		remove_all_filters( 'two_factor_enrollment_required' );
 		remove_all_filters( 'two_factor_providers' );
+		remove_all_filters( 'two_factor_enrollment_notify' );
+		reset_phpmailer_instance();
 		parent::tear_down();
 	}
 
@@ -127,5 +135,35 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 			array( 'Two_Factor_Email' ),
 			get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true )
 		);
+	}
+
+	public function test_persist_enrollment_sends_notification_mail_on_new_enrollment() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$mailer = tests_retrieve_phpmailer_instance();
+		$sent   = $mailer->get_sent();
+
+		$this->assertNotFalse( $sent );
+		$this->assertSame( 'editor@example.org', $sent->to[0][0] );
+	}
+
+	public function test_persist_enrollment_does_not_resend_notification_mail() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		// Confirm the first call actually sent mail, so the second assertion is discriminating.
+		$mailer = tests_retrieve_phpmailer_instance();
+		$this->assertNotFalse( $mailer->get_sent() );
+
+		reset_phpmailer_instance();
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$mailer = tests_retrieve_phpmailer_instance();
+
+		$this->assertFalse( $mailer->get_sent() );
 	}
 }

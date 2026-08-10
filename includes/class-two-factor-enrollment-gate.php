@@ -69,6 +69,11 @@ class Two_Factor_Enrollment_Gate {
 	 * user has actually received and entered an emailed code, mailbox control
 	 * is proven and the enrollment is made real and visible in their profile.
 	 *
+	 * A notification is sent only on the branch that actually appends Email to
+	 * the enabled providers list, i.e. only for a genuinely new enrollment. This
+	 * runs once per account and is not repeated on subsequent logins, and is not
+	 * sent merely because a primary provider was set.
+	 *
 	 * @param WP_User             $user     The authenticated user.
 	 * @param Two_Factor_Provider $provider The provider used to authenticate.
 	 * @return void
@@ -91,6 +96,8 @@ class Two_Factor_Enrollment_Gate {
 		if ( ! in_array( Two_Factor_Enrollment::EMAIL_PROVIDER, $enabled, true ) ) {
 			$enabled[] = Two_Factor_Enrollment::EMAIL_PROVIDER;
 			update_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array_values( $enabled ) );
+
+			Two_Factor_Enrollment_Notify::notify( $user, $provider->get_label() );
 		}
 
 		$primary = get_user_meta( $user->ID, Two_Factor_Core::PROVIDER_USER_META_KEY, true );
