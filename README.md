@@ -197,6 +197,26 @@ add_action( 'two_factor_enrollment_enrolled', function ( $user, $provider ) {
 | `two_factor_enrollment_required` | `false` | Does this user have to enroll |
 | `two_factor_enrollment_deferrable` | `false` | May this user skip enrollment on this login |
 | `two_factor_enrollment_notify` | `true` | Send the enrollment notification email |
+| `two_factor_enrollment_onboarding_header` | `''` | Markup rendered above the onboarding card |
+
+`two_factor_enrollment_onboarding_header` is presentation, not policy. The
+onboarding screen carries no WordPress logo — the default one links to
+wordpress.org from directly above one-time recovery codes, and the screen is
+consumed before it renders, so following any outbound link from it destroys
+those codes permanently. This filter is the space that removal left, for a site
+that wants its own mark there:
+
+```php
+add_filter( 'two_factor_enrollment_onboarding_header', function () {
+	return '<img src="' . esc_url( 'https://example.com/logo.png' ) . '" alt="Example" width="120">';
+} );
+```
+
+The value is run through `wp_kses_post()`, so `<script>` is stripped and inline
+SVG is not allowed — supply a logo as an `<img>`, including a `data:` URI if you
+want to avoid the request. The default is empty and link-free deliberately.
+Wrapping your mark in a link is a decision you can make for your own users, but
+the reason the WordPress logo was removed applies to whatever replaces it.
 
 There is also one action:
 

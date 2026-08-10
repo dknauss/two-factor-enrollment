@@ -1401,4 +1401,93 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'aria-hidden="true"', $tag );
 		$this->assertStringContainsString( 'focusable="false"', $tag );
 	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * Header branding (docs/ux-backlog.md item 4).
+	 *
+	 * The WordPress logo was removed from this screen because it linked to
+	 * wordpress.org, directly above one-time codes that navigating away
+	 * destroys. That left a space an agency deploying this for a client has
+	 * an obvious use for — but the reason the original was removed applies
+	 * to whatever replaces it, so the default has to stay empty and
+	 * link-free. Supplying markup is a site's decision to make; shipping
+	 * one is not ours.
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * Nothing by default. Not an empty wrapper, not a placeholder — no
+	 * markup at all, so a site that never registers the filter renders
+	 * byte-for-byte what it rendered before the filter existed.
+	 */
+	public function test_render_body_emits_no_header_branding_by_default() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringNotContainsString( 'two-factor-enrollment-header', $html );
+	}
+
+	/**
+	 * Supplied markup renders, and renders *above* the card — the space the
+	 * removed logo used to occupy. Inside the card it would compete with the
+	 * codes for the reader's attention, which is the opposite of the point.
+	 */
+	public function test_render_body_renders_filtered_header_branding_above_the_card() {
+		add_filter(
+			'two_factor_enrollment_onboarding_header',
+			function () {
+				return '<p class="acme-brand">Acme Corp</p>';
+			}
+		);
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		remove_all_filters( 'two_factor_enrollment_onboarding_header' );
+
+		$branding = strpos( $html, 'Acme Corp' );
+		$card     = strpos( $html, '<div class="two-factor-enrollment-onboarding">' );
+
+		$this->assertNotFalse( $branding, 'Filtered header markup did not render.' );
+		$this->assertNotFalse( $card, 'The onboarding card was not found.' );
+		$this->assertLessThan( $card, $branding, 'Header branding must render above the card, not inside it.' );
+	}
+
+	/**
+	 * The filter's value is markup a site author supplies, so it goes
+	 * through wp_kses_post() rather than being echoed raw. A plugin or
+	 * theme registering this filter is trusted to a point, but "trusted to
+	 * put a logo here" is not "trusted to inject a script into the login
+	 * page, above one-time recovery codes, on a screen the user was forced
+	 * onto". Ordinary post markup survives; a <script> does not.
+	 */
+	public function test_render_body_sanitizes_filtered_header_branding() {
+		add_filter(
+			'two_factor_enrollment_onboarding_header',
+			function () {
+				return '<script>alert(1)</script><p><strong>Acme</strong></p>';
+			}
+		);
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		remove_all_filters( 'two_factor_enrollment_onboarding_header' );
+
+		$this->assertStringNotContainsString( '<script>', $html );
+		$this->assertStringContainsString( '<strong>Acme</strong>', $html );
+	}
+
+	/**
+	 * A filter that returns nothing useful must not leave an empty wrapper
+	 * behind — an empty styled block is a visible gap on a screen whose
+	 * spacing was deliberately tuned.
+	 */
+	public function test_render_body_emits_no_wrapper_for_empty_header_branding() {
+		add_filter( 'two_factor_enrollment_onboarding_header', '__return_empty_string' );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		remove_all_filters( 'two_factor_enrollment_onboarding_header' );
+
+		$this->assertStringNotContainsString( 'two-factor-enrollment-header', $html );
+	}
 }

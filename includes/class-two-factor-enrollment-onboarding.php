@@ -678,6 +678,19 @@ class Two_Factor_Enrollment_Onboarding {
 				cursor: not-allowed;
 			}
 
+			/* Only ever rendered when the two_factor_enrollment_onboarding_header
+			 * filter returns markup, so these rules describe a block that
+			 * does not exist on a default install. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-header {
+				margin: 0 0 20px;
+				text-align: center;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-header img {
+				max-width: 100%;
+				height: auto;
+			}
+
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding {
 				background: #fff;
 				border: 1px solid #c3c4c7;
@@ -1000,8 +1013,37 @@ class Two_Factor_Enrollment_Onboarding {
 	public static function render_body( $codes, $redirect_to ) {
 		$profile_url = admin_url( 'profile.php#two-factor-options' );
 
+		/**
+		 * Optional markup rendered above the onboarding card.
+		 *
+		 * This screen has no WordPress logo: the default one linked to
+		 * wordpress.org from directly above one-time recovery codes, and
+		 * following any outbound link here costs the user those codes for
+		 * good — the screen is consumed before it renders. Removing it left
+		 * a space a site deploying this for its own users has an obvious use
+		 * for, and this filter is that space.
+		 *
+		 * The default is an empty string and must stay one. Shipping a
+		 * linked mark by default would reintroduce exactly the problem the
+		 * logo removal solved. A site that supplies markup containing a link
+		 * has made that decision for itself, knowing its own users; this
+		 * plugin cannot make it for them.
+		 *
+		 * The value is run through wp_kses_post() before output.
+		 *
+		 * @param string $header Markup to render above the card. Default ''.
+		 */
+		$header = apply_filters( 'two_factor_enrollment_onboarding_header', '' );
+		$header = wp_kses_post( (string) $header );
+
 		ob_start();
 		?>
+		<?php if ( '' !== trim( $header ) ) : ?>
+			<div class="two-factor-enrollment-header">
+				<?php echo $header; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Site-supplied markup, sanitized with wp_kses_post() above; escaping it again would render the tags as text and defeat the filter's purpose. ?>
+			</div>
+		<?php endif; ?>
+
 		<div class="two-factor-enrollment-onboarding">
 			<section class="two-factor-enrollment-section">
 				<h2><?php esc_html_e( 'Two-factor authentication is on', 'two-factor-enrollment' ); ?></h2>
