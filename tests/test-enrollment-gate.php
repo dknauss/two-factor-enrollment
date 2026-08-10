@@ -238,10 +238,36 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 
 		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
 
-		$this->assertSame(
-			'pending',
-			get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true )
-		);
+		$marker = get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true );
+
+		$this->assertStringStartsWith( 'pending:', $marker );
+		$this->assertTrue( Two_Factor_Enrollment_Onboarding::needs_onboarding( $this->user_id ) );
+	}
+
+	/**
+	 * The onboarding screen is a state-changing GET, so the pending marker has
+	 * to carry the one-time token that authorizes it — and a fresh one per
+	 * enrollment, never a constant.
+	 */
+	public function test_persist_enrollment_mints_a_one_time_onboarding_token() {
+		$this->inject_via_gate();
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$first = Two_Factor_Enrollment_Onboarding::pending_token( $this->user_id );
+
+		$this->assertSame( 32, strlen( $first ) );
+
+		$other_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+		Two_Factor_Core::get_enabled_providers_for_user( $other_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( get_user_by( 'id', $other_id ), Two_Factor_Email::get_instance() );
+
+		$this->assertNotSame( $first, Two_Factor_Enrollment_Onboarding::pending_token( $other_id ) );
 	}
 
 	public function test_persist_enrollment_does_not_reset_onboarding_after_it_is_done() {

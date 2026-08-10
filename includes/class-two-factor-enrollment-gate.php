@@ -213,7 +213,13 @@ class Two_Factor_Enrollment_Gate {
 			$enabled[] = Two_Factor_Enrollment::EMAIL_PROVIDER;
 			update_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array_values( $enabled ) );
 
-			update_user_meta( $user->ID, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, Two_Factor_Enrollment_Onboarding::STATE_PENDING );
+			/*
+			 * The marker carries a one-time token. The onboarding screen is a
+			 * state-changing GET that generates the user's only backup codes,
+			 * and this token is what authorizes it. See
+			 * Two_Factor_Enrollment_Onboarding::render().
+			 */
+			update_user_meta( $user->ID, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, Two_Factor_Enrollment_Onboarding::new_pending_marker() );
 
 			/*
 			 * Best effort: the return value is deliberately discarded. A

@@ -44,9 +44,25 @@ is never diverted to a screen they never asked for.
 
 If the user has no backup codes yet, the onboarding screen generates a set and
 appends `Two_Factor_Backup_Codes` to their enabled providers, so the codes it
-shows are immediately usable as a real login method — not a preview. Their
-primary provider stays Email. If an administrator has disabled the Backup
-Codes provider site-wide, this section is skipped.
+shows are immediately usable as a real login method — not a preview. They can
+be downloaded as a text file from the screen. Their primary provider stays
+Email. If an administrator has disabled the Backup Codes provider site-wide,
+this section is skipped.
+
+That particular set of codes is shown once and not again, but this is not the
+user's last chance at recovery codes: anyone who is signed in can generate a
+fresh set from `profile.php` whenever they like.
+
+### The onboarding screen is authorized by a one-time token
+
+Rendering the screen changes state — it generates backup codes, enables the
+provider, and consumes itself — so the link carries a one-time token, minted
+with the pending marker and destroyed when the screen completes. A request
+without the matching token is passed straight through to the user's
+destination, generating nothing and consuming nothing. (A WordPress nonce
+cannot do this job: `wp_create_nonce()` folds the session token into its hash,
+and `wp_set_auth_cookie()` does not populate `$_COOKIE` within the request that
+mints the link, so such a nonce would fail verification every time.)
 
 ## Security
 

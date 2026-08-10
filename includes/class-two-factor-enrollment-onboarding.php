@@ -19,25 +19,30 @@ class Two_Factor_Enrollment_Onboarding {
 	 * This is a tri-state flag, not a boolean, and is the only state this
 	 * plugin persists:
 	 *
-	 * - absent    This plugin never enrolled the user. Never show the screen.
-	 *             This covers users who configured two-factor (e.g. TOTP)
-	 *             before this plugin was ever installed; they must not be
-	 *             diverted to a screen they never asked for.
-	 * - 'pending' This plugin enrolled the user via the gate. The screen is
-	 *             owed and has not yet been shown.
-	 * - 'done'    The screen has been shown.
+	 * - absent           This plugin never enrolled the user. Never show the
+	 *                    screen. This covers users who configured two-factor
+	 *                    (e.g. TOTP) before this plugin was ever installed;
+	 *                    they must not be diverted to a screen they never
+	 *                    asked for.
+	 * - 'pending:TOKEN'  This plugin enrolled the user via the gate. The
+	 *                    screen is owed and has not yet been shown, and TOKEN
+	 *                    is the one-time secret that authorizes showing it.
+	 * - 'done'           The screen has been shown.
 	 *
-	 * Comparisons against this meta value must use strict string identity
-	 * ('pending' === $value), not truthiness — both the absent ('') and
-	 * 'done' states must read as "do not show the screen".
+	 * Comparisons against this meta value must never use truthiness — both the
+	 * absent ('') and 'done' states must read as "do not show the screen". Use
+	 * needs_onboarding(), which knows about the 'pending' prefix.
+	 *
+	 * Flipping the marker to 'done' destroys the token, which is what makes
+	 * the screen single-use by construction.
 	 *
 	 * @var string
 	 */
 	const ONBOARDED_META_KEY = '_two_factor_enrollment_onboarded';
 
 	/**
-	 * Meta value recorded once the plugin has enrolled a user and the screen
-	 * is owed.
+	 * Meta value prefix recorded once the plugin has enrolled a user and the
+	 * screen is owed. The token follows, separated by a colon.
 	 *
 	 * @var string
 	 */
@@ -58,6 +63,13 @@ class Two_Factor_Enrollment_Onboarding {
 	const ACTION = 'two_factor_enrollment_onboarding';
 
 	/**
+	 * Query argument carrying the one-time token.
+	 *
+	 * @var string
+	 */
+	const TOKEN_ARG = 'two_factor_enrollment_token';
+
+	/**
 	 * Register hooks.
 	 *
 	 * @return void
@@ -68,12 +80,51 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
+	 * Mint a fresh 'pending' marker value, token and all.
+	 *
+	 * The format of the marker is this class's business, so the gate asks for
+	 * a value rather than assembling one.
+	 *
+	 * @return string
+	 */
+	public static function new_pending_marker() {
+		return self::STATE_PENDING . ':' . wp_generate_password( 32, false, false );
+	}
+
+	/**
+	 * The one-time token stored in the user's 'pending' marker.
+	 *
+	 * @param int $user_id The user ID.
+	 * @return string The token, or an empty string when the user is not in the
+	 *                pending state or their marker predates tokens.
+	 */
+	public static function pending_token( $user_id ) {
+		$state = get_user_meta( (int) $user_id, self::ONBOARDED_META_KEY, true );
+
+		if ( ! is_string( $state ) ) {
+			return '';
+		}
+
+		$prefix = self::STATE_PENDING . ':';
+
+		if ( 0 !== strpos( $state, $prefix ) ) {
+			return '';
+		}
+
+		return substr( $state, strlen( $prefix ) );
+	}
+
+	/**
 	 * Whether this user should see the onboarding screen.
 	 *
 	 * True only when this plugin is the one that enrolled the user, i.e. the
-	 * onboarding marker is exactly 'pending'. A user whose two-factor setup
-	 * predates this plugin (marker absent) or who has already seen the
+	 * onboarding marker is in the 'pending' state. A user whose two-factor
+	 * setup predates this plugin (marker absent) or who has already seen the
 	 * screen (marker 'done') is never diverted here.
+	 *
+	 * A bare 'pending' with no token still reads as owed, so the state stays
+	 * honest, but render() will refuse to show the screen without a token to
+	 * check and will pass the user straight through to their destination.
 	 *
 	 * @param WP_User|int|null $user User object, ID, or null for the current user.
 	 * @return bool
@@ -91,11 +142,21 @@ class Two_Factor_Enrollment_Onboarding {
 
 		$state = get_user_meta( $user->ID, self::ONBOARDED_META_KEY, true );
 
-		return self::STATE_PENDING === $state;
+		if ( ! is_string( $state ) ) {
+			return false;
+		}
+
+		if ( self::STATE_PENDING === $state ) {
+			return true;
+		}
+
+		return 0 === strpos( $state, self::STATE_PENDING . ':' );
 	}
 
 	/**
 	 * Record that the screen has been shown.
+	 *
+	 * This destroys the one-time token along with the pending state.
 	 *
 	 * @param int $user_id The user ID.
 	 * @return void
@@ -105,22 +166,34 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
-	 * Build the onboarding screen URL.
+	 * Build the onboarding screen URL, carrying the user's one-time token.
 	 *
 	 * Two_Factor_Core::login_url() already runs urlencode_deep() over every
 	 * param value before building the query string, so $redirect_to is
 	 * passed through raw here — encoding it first would double-encode it.
 	 *
-	 * @param string $redirect_to Where to send the user afterwards.
+	 * @param string           $redirect_to Where to send the user afterwards.
+	 * @param WP_User|int|null $user        The user the token belongs to.
+	 *                                      Defaults to the current user.
 	 * @return string
 	 */
-	public static function url( $redirect_to ) {
-		return Two_Factor_Core::login_url(
-			array(
-				'action'      => self::ACTION,
-				'redirect_to' => $redirect_to,
-			)
+	public static function url( $redirect_to, $user = null ) {
+		$args = array(
+			'action'      => self::ACTION,
+			'redirect_to' => $redirect_to,
 		);
+
+		$user = Two_Factor_Enrollment::fetch_user( $user );
+
+		if ( $user ) {
+			$token = self::pending_token( $user->ID );
+
+			if ( '' !== $token ) {
+				$args[ self::TOKEN_ARG ] = $token;
+			}
+		}
+
+		return Two_Factor_Core::login_url( $args );
 	}
 
 	/**
@@ -140,11 +213,24 @@ class Two_Factor_Enrollment_Onboarding {
 			return $redirect_to;
 		}
 
-		return self::url( $redirect_to );
+		return self::url( $redirect_to, $user );
 	}
 
 	/**
 	 * Render the onboarding screen and exit.
+	 *
+	 * This is a state-changing GET: it generates backup codes, enables the
+	 * Backup Codes provider, and consumes the one-time screen. It is therefore
+	 * authorized by the token minted with the pending marker, without which a
+	 * single cross-site click could burn a user's recovery screen — generating
+	 * codes and flipping the marker to 'done' while the user never saw them.
+	 *
+	 * wp_create_nonce() cannot stand in for that token. It folds
+	 * wp_get_session_token() into its hash, wp_get_session_token() reads
+	 * $_COOKIE[ LOGGED_IN_COOKIE ], and wp_set_auth_cookie() never populates
+	 * $_COOKIE within the same request. A nonce minted at `login_redirect`
+	 * time is therefore built from an empty session token and verified against
+	 * the real one on the next request: it fails every time.
 	 *
 	 * @return void
 	 */
@@ -165,15 +251,34 @@ class Two_Factor_Enrollment_Onboarding {
 			exit;
 		}
 
-		$codes = self::maybe_generate_backup_codes( $user );
+		$stored = self::pending_token( $user->ID );
 
-		self::mark_onboarded( $user->ID );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- This token is the request's authentication; see the docblock for why a nonce cannot be used.
+		$supplied = isset( $_REQUEST[ self::TOKEN_ARG ] ) ? sanitize_text_field( wp_unslash( $_REQUEST[ self::TOKEN_ARG ] ) ) : '';
+
+		if ( '' === $stored || '' === $supplied || ! hash_equals( $stored, $supplied ) ) {
+			// Send them on their way without consuming the screen: the marker
+			// stays 'pending', no codes are generated, and the real link still
+			// works.
+			wp_safe_redirect( $redirect_to );
+			exit;
+		}
+
+		$codes = self::maybe_generate_backup_codes( $user );
 
 		login_header( __( 'Two-Factor Authentication', 'two-factor-enrollment' ) );
 
-		echo self::render_body( $user, $codes, $redirect_to ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped within render_body().
+		echo self::render_body( $codes, $redirect_to ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped within render_body().
 
 		login_footer();
+
+		/*
+		 * Marked last, deliberately. These are the user's only recovery codes;
+		 * a failure or a dropped connection between marking and rendering
+		 * would burn the one-time screen with the codes generated but never
+		 * displayed, leaving the user with credentials they have never seen.
+		 */
+		self::mark_onboarded( $user->ID );
 
 		exit;
 	}
@@ -221,6 +326,16 @@ class Two_Factor_Enrollment_Onboarding {
 
 		$codes = Two_Factor_Backup_Codes::get_instance()->generate_codes( $user, array( 'method' => 'append' ) );
 
+		/*
+		 * The enabled-providers list is read from and written to user meta by
+		 * hand here, deliberately. Two_Factor_Core::enable_provider_for_user()
+		 * reads the current list via get_enabled_providers_for_user(), which
+		 * fires this plugin's own two_factor_enabled_providers_for_user
+		 * filter — so using the core API would persist whatever the gate
+		 * injected at runtime, and the injection-is-runtime-only invariant is
+		 * what lets this plugin be removed without a trace. Do not "simplify"
+		 * this to the core API.
+		 */
 		$enabled = get_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true );
 
 		if ( ! is_array( $enabled ) ) {
@@ -236,17 +351,47 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
-	 * Build the onboarding screen markup.
+	 * Build a `data:` URI that downloads the codes as a text file.
 	 *
-	 * @param WP_User $user        The enrolled user.
-	 * @param array   $codes       Freshly generated backup codes, or an empty
-	 *                             array to omit that section (Backup Codes
-	 *                             disabled site-wide, or the user already
-	 *                             has codes).
-	 * @param string  $redirect_to Where the Continue link points.
+	 * Two Factor core builds its own download link the same way (see
+	 * Two_Factor_Backup_Codes::rest_generate_codes()). Reusing the pattern
+	 * keeps this screen JS-free and asset-free, which phpcs.xml.dist relies on
+	 * — this plugin ships no scripts and no styles by design.
+	 *
+	 * @param string[] $codes The freshly generated codes.
 	 * @return string
 	 */
-	public static function render_body( $user, $codes, $redirect_to ) {
+	public static function codes_download_link( $codes ) {
+		$title = sprintf(
+			/* translators: %s: the site's domain */
+			__( 'Two-Factor Recovery Codes for %s', 'two-factor-enrollment' ),
+			home_url( '/' )
+		);
+
+		$link  = 'data:application/text;charset=utf-8,';
+		$link .= rawurlencode( "{$title}\r\n\r\n" );
+
+		$i = 1;
+
+		foreach ( $codes as $code ) {
+			$link .= rawurlencode( "{$i}. {$code}\r\n" );
+			++$i;
+		}
+
+		return $link;
+	}
+
+	/**
+	 * Build the onboarding screen markup.
+	 *
+	 * @param array  $codes       Freshly generated backup codes, or an empty
+	 *                            array to omit that section (Backup Codes
+	 *                            disabled site-wide, or the user already
+	 *                            has codes).
+	 * @param string $redirect_to Where the Continue link points.
+	 * @return string
+	 */
+	public static function render_body( $codes, $redirect_to ) {
 		$profile_url = admin_url( 'profile.php#two-factor-options' );
 
 		ob_start();
@@ -262,7 +407,7 @@ class Two_Factor_Enrollment_Onboarding {
 				<h3><?php esc_html_e( 'Save your backup codes', 'two-factor-enrollment' ); ?></h3>
 
 				<p>
-					<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — they will not be shown again.', 'two-factor-enrollment' ); ?>
+					<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — these codes will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
 				</p>
 
 				<ul class="two-factor-enrollment-codes">
@@ -270,6 +415,12 @@ class Two_Factor_Enrollment_Onboarding {
 						<li><code><?php echo esc_html( $code ); ?></code></li>
 					<?php endforeach; ?>
 				</ul>
+
+				<p class="two-factor-enrollment-download">
+					<a href="<?php echo esc_url( self::codes_download_link( $codes ), array( 'data' ) ); ?>" download="two-factor-backup-codes.txt">
+						<?php esc_html_e( 'Download codes', 'two-factor-enrollment' ); ?>
+					</a>
+				</p>
 			<?php endif; ?>
 
 			<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
