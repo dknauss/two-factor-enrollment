@@ -26,6 +26,9 @@ class Two_Factor_Enrollment {
 	 * @return void
 	 */
 	public static function add_hooks() {
+		require_once TWO_FACTOR_ENROLLMENT_DIR . 'includes/class-two-factor-enrollment-gate.php';
+
+		Two_Factor_Enrollment_Gate::add_hooks();
 	}
 
 	/**
