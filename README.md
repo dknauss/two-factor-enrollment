@@ -1,3 +1,131 @@
 # Two-Factor Enrollment
 
-An add-on for the WordPress Two Factor plugin. Under construction.
+An add-on for the [Two Factor](https://wordpress.org/plugins/two-factor/) plugin
+that enrolls policy-covered users in two-factor authentication **before an auth
+cookie is issued**.
+
+Implements the onboarding flow described in
+[WordPress/two-factor#813](https://github.com/WordPress/two-factor/issues/813).
+
+## What it does
+
+When a covered user logs in without a second factor configured, this plugin adds
+the Email provider to their account at runtime. Two Factor's existing login
+challenge then emails them a one-time code and withholds the auth cookie until
+they enter it. Confirming the code proves mailbox control and completes
+enrollment in a single step.
+
+Enrollment is only made permanent — written to the user's enabled providers —
+once they actually pass the emailed challenge. If a covered user never logs in
+after this plugin is installed, or if it's deactivated first, nothing is written
+and no trace is left. Once enrollment does complete, an account-change
+notification is emailed (see `two_factor_enrollment_notify` below), and the
+user is shown a one-time onboarding screen after their next login, where backup
+codes are generated and enabled for them and they're offered a link to set up
+an authenticator app.
+
+A user who is both required and marked deferrable is skipped entirely on that
+login — Email is not injected, and they proceed normally. This plugin stores
+no counters or deadlines for deferral; it only asks the policy layer's filter
+and honors the answer each time.
+
+### Onboarding is scoped to users this plugin enrolled
+
+The onboarding screen only ever appears for a user this plugin itself enrolled.
+Internally this is tracked with a tri-state user meta value
+(`_two_factor_enrollment_onboarded`: absent, `pending`, or `done`) rather than a
+boolean, specifically so that "never enrolled by this plugin" and "already saw
+the screen" are both distinguishable from "owed the screen." A user who
+configured TOTP (or any other provider) before this plugin was ever installed
+is never diverted to a screen they never asked for.
+
+### The onboarding screen enables backup codes, not just displays them
+
+If the user has no backup codes yet, the onboarding screen generates a set and
+appends `Two_Factor_Backup_Codes` to their enabled providers, so the codes it
+shows are immediately usable as a real login method — not a preview. Their
+primary provider stays Email. If an administrator has disabled the Backup
+Codes provider site-wide, this section is skipped.
+
+## Security
+
+Enrollment completing inside the login challenge, before any auth cookie
+exists, is the property this whole design rests on:
+
+- No password-only session is ever created for a covered user. There is
+  nothing to lock down between "password verified" and "second factor set up,"
+  because that window doesn't exist — the auth cookie simply isn't issued
+  until the emailed code is entered.
+- This closes the **enrollment race**: an attacker who has obtained only a
+  user's password cannot complete enrollment, because they cannot receive the
+  emailed one-time code. Passwords alone stop being sufficient to take over an
+  account, including one that had no second factor configured yet.
+- The required path deliberately offers **no provider chooser**. If a user
+  could pick a method other than Email, an attacker could try to steer
+  enrollment toward a factor that doesn't depend on the mailbox. Removing the
+  choice is what makes the mailbox requirement actually load-bearing.
+
+## What it does not do
+
+It owns **no enforcement policy**. It has no settings screen and no role
+targeting. Both contract filters (`two_factor_enrollment_required` and
+`two_factor_enrollment_deferrable`) default to `false`, so installing it alone
+changes nothing. Something else decides who must enroll — for example a
+companion policy plugin, or a few lines in a theme or mu-plugin.
+
+## Usage
+
+```php
+// Require enrollment for everyone who can publish.
+add_filter(
+	'two_factor_enrollment_required',
+	function ( $required, $user ) {
+		return user_can( $user, 'edit_posts' );
+	},
+	10,
+	2
+);
+```
+
+```php
+// Let users who are within their first 14 days defer enrollment.
+add_filter(
+	'two_factor_enrollment_deferrable',
+	function ( $deferrable, $user ) {
+		return ( time() - strtotime( $user->user_registered ) ) < 14 * DAY_IN_SECONDS;
+	},
+	10,
+	2
+);
+```
+
+## Filters
+
+| Filter | Default | Purpose |
+|---|---|---|
+| `two_factor_enrollment_required` | `false` | Does this user have to enroll |
+| `two_factor_enrollment_deferrable` | `false` | May this user skip enrollment on this login |
+| `two_factor_enrollment_notify` | `true` | Send the enrollment notification email |
+
+## Requirements
+
+WordPress 6.5+, PHP 7.2+, and the Two Factor plugin.
+
+## Limitation
+
+If an administrator disables the Email provider site-wide, this plugin stands
+down and shows an admin notice. Enrolling users into a non-Email provider
+requires configuration after login, which needs a session — see
+[WordPress/two-factor#934](https://github.com/WordPress/two-factor/issues/934).
+
+## Uninstalling
+
+The only state this plugin persists of its own is the single
+`_two_factor_enrollment_onboarded` user meta key. Uninstalling removes that key
+from every user who has it. It deliberately does **not** touch the Two Factor
+plugin's own data — enabled providers, backup codes, and so on — because that
+data belongs to the dependency and may still be in active use.
+
+## License
+
+GPL-2.0-or-later.
