@@ -732,6 +732,16 @@ class Two_Factor_Enrollment_Onboarding {
 				margin-bottom: 0;
 			}
 
+			/* Secondary, not hidden: the caveat carries the one piece of
+			 * reassurance on this screen -- that a lost set can be
+			 * regenerated -- so it is set quieter than the instruction it
+			 * follows without dropping to a size that reads as fine print
+			 * nobody is expected to have seen. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-caveat {
+				font-size: 13px;
+				color: #50575e;
+			}
+
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-method {
 				display: flex;
 				align-items: center;
@@ -1057,8 +1067,31 @@ class Two_Factor_Enrollment_Onboarding {
 				<section class="two-factor-enrollment-section">
 					<h3><?php esc_html_e( 'Save your backup codes', 'two-factor-enrollment' ); ?></h3>
 
+					<?php
+					/*
+					 * Instruction first, caveat second and quieter. As one
+					 * paragraph the only sentence the user has to act on —
+					 * save these now — sat in the middle, behind a
+					 * conditional about losing email access and ahead of a
+					 * clause about regenerating them later.
+					 *
+					 * Every clause here earned its place and none may be
+					 * dropped in the name of brevity. The regeneration
+					 * clause in particular was added after a review found
+					 * the copy overstated the permanence of the codes:
+					 * "will not be shown again" is true of these codes but
+					 * reads as though recovery is now impossible, which
+					 * would frighten a user who has already lost them into
+					 * thinking there is nothing left to do. The suite
+					 * asserts all of them survive.
+					 */
+					?>
 					<p>
-						<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — these codes will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
+						<?php esc_html_e( 'Save these somewhere safe now. If you ever lose access to your email, they are the only way back into your account, and each code works once.', 'two-factor-enrollment' ); ?>
+					</p>
+
+					<p class="two-factor-enrollment-caveat">
+						<?php esc_html_e( 'They will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
 					</p>
 
 					<div class="two-factor-enrollment-credential-block">

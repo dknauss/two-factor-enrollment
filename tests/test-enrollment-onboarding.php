@@ -1490,4 +1490,47 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 		$this->assertStringNotContainsString( 'two-factor-enrollment-header', $html );
 	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * The codes copy (docs/ux-backlog.md item 5).
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * The instruction leads; the caveat follows in its own, quieter block.
+	 * As one five-line paragraph the actual instruction — save these now —
+	 * sat in the middle of it, behind a conditional about losing email
+	 * access and ahead of a clause about regenerating them later.
+	 */
+	public function test_render_body_splits_the_codes_copy_into_an_imperative_and_a_caveat() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$this->assertStringContainsString( 'two-factor-enrollment-caveat', $html );
+
+		$lead   = strpos( $html, 'Save these somewhere safe now' );
+		$caveat = strpos( $html, 'two-factor-enrollment-caveat' );
+
+		$this->assertNotFalse( $lead, 'The codes copy must lead with the instruction.' );
+		$this->assertLessThan( $caveat, $lead, 'The instruction must come before the caveat, not after it.' );
+	}
+
+	/**
+	 * Shortening this copy must not cost it any substance. Every clause
+	 * below is here because something went wrong without it — the
+	 * regeneration clause in particular was added after a review found the
+	 * original overstated the permanence of the codes (see
+	 * test_render_body_does_not_overstate_the_permanence_of_the_codes()).
+	 * This asserts all five survive the rewrite.
+	 */
+	public function test_render_body_codes_copy_keeps_every_substantive_clause() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$this->assertStringContainsString( 'lose access to your email', $html, 'When the codes matter.' );
+		$this->assertStringContainsString( 'only way back into your account', $html, 'What they are for.' );
+		$this->assertStringContainsString( 'works once', $html, 'That they are not reusable.' );
+		$this->assertStringContainsString( 'Save these somewhere safe now', $html, 'What to do.' );
+		$this->assertStringContainsString( 'will not be shown again', $html, 'Why to do it now.' );
+		$this->assertStringContainsString( 'generate a new set from your profile', $html, 'That this is recoverable.' );
+	}
 }
