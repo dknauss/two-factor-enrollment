@@ -647,6 +647,80 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The defect this test exists to catch: the clipboard copy must join the
+	 * codes with a real separator (one per line), not run them together into
+	 * a single indistinguishable string. A test that only checks for the
+	 * copy button's existence — as test_render_body_includes_a_copy_button_
+	 * when_codes_are_present() above does — would not catch a regression
+	 * here; this test inspects the actual payload value.
+	 */
+	public function test_clipboard_payload_joins_codes_with_newlines_only() {
+		$codes = array( 'aaaa1111', 'bbbb2222', 'cccc3333' );
+
+		$payload = Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes );
+
+		$this->assertSame( "aaaa1111\nbbbb2222\ncccc3333", $payload );
+	}
+
+	/**
+	 * The direct negative case: this is exactly what the reported defect
+	 * produced — all ten codes concatenated with no separator at all. Naming
+	 * the wrong shape explicitly, rather than only asserting the right one,
+	 * is what makes this test discriminate against a regression back to it.
+	 */
+	public function test_clipboard_payload_is_not_the_naive_concatenation() {
+		$codes = array( 'aaaa1111', 'bbbb2222', 'cccc3333' );
+
+		$payload = Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes );
+
+		$this->assertNotSame( implode( '', $codes ), $payload );
+		$this->assertStringNotContainsString( 'aaaa1111bbbb2222', $payload );
+	}
+
+	/**
+	 * "Nothing else" means nothing else: no numbering (a corrupting no-op if
+	 * pasted into a single code field) and no site name or URL (deliberately
+	 * less identifying context than the downloaded file carries — see
+	 * clipboard_payload()'s docblock). codes_download_link() is the file's
+	 * equivalent and is the one place this context belongs.
+	 */
+	public function test_clipboard_payload_omits_numbering_and_title() {
+		$codes = array( 'aaaa1111', 'bbbb2222' );
+
+		$payload = Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes );
+
+		$this->assertStringNotContainsString( '1. aaaa1111', $payload );
+		$this->assertStringNotContainsString( 'Two-Factor Recovery Codes', $payload );
+		$this->assertStringNotContainsString( home_url( '/' ), $payload );
+	}
+
+	/**
+	 * The round-trip that actually matters: what a browser will do with the
+	 * markup render_body() emits. This decodes the data-codes-payload
+	 * attribute exactly the way the inline script does — HTML-attribute
+	 * decoding (what esc_attr() produced), then JSON.parse() (what
+	 * wp_json_encode() produced) — and confirms the result is the real,
+	 * newline-joined clipboard_payload() value, not the ten codes run
+	 * together. Unlike a substring check against the raw HTML, this proves
+	 * the value that actually reaches navigator.clipboard.writeText().
+	 */
+	public function test_render_body_embeds_the_clipboard_payload_as_escaped_json() {
+		$codes = array( 'aaaa1111', 'bbbb2222', 'cccc3333' );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( $codes, admin_url() );
+
+		$found = preg_match( '/data-codes-payload="([^"]*)"/', $html, $matches );
+		$this->assertSame( 1, $found, 'The copy button must carry a data-codes-payload attribute.' );
+
+		$decoded_json = html_entity_decode( $matches[1], ENT_QUOTES );
+		$payload      = json_decode( $decoded_json );
+
+		$this->assertSame( Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes ), $payload );
+		$this->assertSame( "aaaa1111\nbbbb2222\ncccc3333", $payload );
+		$this->assertNotSame( implode( '', $codes ), $payload );
+	}
+
+	/**
 	 * The download link is the fallback the copy button is not: it must be
 	 * a plain, always-present <a href> with no hidden attribute and no
 	 * dependency on the inline script ever running, so it keeps working with

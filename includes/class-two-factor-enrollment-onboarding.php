@@ -479,6 +479,35 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
+	 * Build the clipboard payload for the click-to-copy button: the codes,
+	 * newline-separated, and nothing else.
+	 *
+	 * This format is a deliberate choice, not a leftover default:
+	 *
+	 * - One code per line is what a human pastes into a password manager
+	 *   note, a text file, or a printed sheet without editing first. Comma-
+	 *   or tab-separated would need cleaning up before it is usable.
+	 * - No numbering. The "1." "2." prefixes in codes_download_link()'s file
+	 *   and in the on-screen list are visual aids for reading a list; in
+	 *   stored text they are noise, and they corrupt the value if someone
+	 *   pastes a single line into a code-entry field.
+	 * - No site name or URL header, deliberately, even though
+	 *   codes_download_link()'s downloaded *file* carries one. The clipboard
+	 *   is a more exposed surface than a file the user chose to save:
+	 *   clipboard managers persist history, and any application the user
+	 *   focuses next can read it. The codes alone are meaningless to anyone
+	 *   who does not already know where they came from, so the clipboard
+	 *   copy should carry less identifying context than the file, not the
+	 *   same amount.
+	 *
+	 * @param string[] $codes The freshly generated codes.
+	 * @return string
+	 */
+	public static function clipboard_payload( $codes ) {
+		return implode( "\n", $codes );
+	}
+
+	/**
 	 * Whether the current wp-login.php request is this screen's own action.
 	 *
 	 * login_enqueue_scripts fires from inside login_header(), before this
@@ -668,8 +697,14 @@ class Two_Factor_Enrollment_Onboarding {
 	 * either way.
 	 *
 	 * This is a static string with no interpolated data of any kind -- the
-	 * translated labels it reads live in the markup's data attributes,
-	 * already escaped there with esc_attr(), not built into this string.
+	 * translated labels and the codes themselves live in the markup's data
+	 * attributes, already escaped there with esc_attr() (and, for the codes
+	 * payload, wp_json_encode() underneath that -- see render_body() and
+	 * clipboard_payload()), not built into this string. Reading the payload
+	 * from a data attribute rather than re-deriving it by scraping and
+	 * joining the on-screen code nodes here keeps the newline-separated,
+	 * no-numbering, no-title format defined in exactly one place
+	 * (clipboard_payload()) instead of two that could drift apart.
 	 *
 	 * @return string
 	 */
@@ -689,12 +724,9 @@ class Two_Factor_Enrollment_Onboarding {
 				button.hidden = false;
 
 				button.addEventListener( "click", function () {
-					var codeNodes = document.querySelectorAll( ".two-factor-enrollment-codes code" );
-					var codes = Array.prototype.map.call( codeNodes, function ( node ) {
-						return node.textContent;
-					} ).join( "\\n" );
+					var payload = JSON.parse( button.getAttribute( "data-codes-payload" ) );
 
-					navigator.clipboard.writeText( codes ).then( function () {
+					navigator.clipboard.writeText( payload ).then( function () {
 						var originalLabel = button.getAttribute( "data-default-label" );
 						var copiedLabel = button.getAttribute( "data-copied-label" );
 
@@ -760,9 +792,23 @@ class Two_Factor_Enrollment_Onboarding {
 						<a class="button button-primary two-factor-enrollment-download" href="<?php echo esc_url( self::codes_download_link( $codes ), array( 'data' ) ); ?>" download="two-factor-backup-codes.txt">
 							<?php esc_html_e( 'Download codes', 'two-factor-enrollment' ); ?>
 						</a>
+						<?php
+						/*
+						 * The payload is built once, in PHP, by clipboard_payload() --
+						 * newline-separated codes and nothing else -- then carried to
+						 * the click handler as JSON (wp_json_encode()) inside an
+						 * HTML attribute (esc_attr()). Double-escaped for its two
+						 * nested contexts: JSON for the JS string the click handler
+						 * will JSON.parse(), then HTML-attribute escaping around
+						 * that. This is the "properly escaped for its context" rule
+						 * the brief calls out, and it is why this is wp_json_encode()
+						 * rather than hand-built string concatenation.
+						 */
+						?>
 						<button type="button" class="button two-factor-enrollment-copy" hidden aria-live="polite"
 							data-default-label="<?php echo esc_attr__( 'Copy codes', 'two-factor-enrollment' ); ?>"
 							data-copied-label="<?php echo esc_attr__( 'Copied!', 'two-factor-enrollment' ); ?>"
+							data-codes-payload="<?php echo esc_attr( wp_json_encode( self::clipboard_payload( $codes ) ) ); ?>"
 						>
 							<?php esc_html_e( 'Copy codes', 'two-factor-enrollment' ); ?>
 						</button>
