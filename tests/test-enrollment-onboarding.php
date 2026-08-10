@@ -419,6 +419,47 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Regression test for a dependency bug: Two_Factor_Backup_Codes::generate_codes()
+	 * called with 'method' => 'append' does
+	 * `(array) get_user_meta( $user->ID, self::BACKUP_CODES_META_KEY, true )`,
+	 * and get_user_meta() with $single = true returns '' when the meta key is
+	 * absent. `(array) ''` is `array( '' )`, not `array()`, so the ten real
+	 * codes land on top of a phantom empty-string entry — eleven stored
+	 * hashes for ten generated codes. That entry can never validate and is
+	 * never removed, so codes_remaining_for_user() permanently overcounts by
+	 * one. This method must not pass 'method' => 'append' for exactly this
+	 * reason; see maybe_generate_backup_codes()'s docblock.
+	 */
+	public function test_maybe_generate_backup_codes_does_not_inflate_remaining_count() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes( $user );
+
+		$this->assertSame(
+			Two_Factor_Backup_Codes::NUMBER_OF_CODES,
+			Two_Factor_Backup_Codes::codes_remaining_for_user( $user )
+		);
+	}
+
+	/**
+	 * Companion to the count regression above: proves the corruption
+	 * directly against stored meta rather than through the derived count,
+	 * and confirms the number of stored hashes matches the number of codes
+	 * handed back to the caller for display.
+	 */
+	public function test_maybe_generate_backup_codes_stores_no_empty_hash() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		$codes = Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes( $user );
+
+		$stored = get_user_meta( $this->user_id, '_two_factor_backup_codes', true );
+
+		$this->assertIsArray( $stored );
+		$this->assertNotContains( '', $stored, 'A stored backup-code hash was an empty string.' );
+		$this->assertSame( count( $codes ), count( $stored ) );
+	}
+
+	/**
 	 * A user who already has backup codes must keep them: generating new
 	 * ones on every visit to this screen would silently invalidate codes
 	 * the user may have already saved.

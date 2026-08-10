@@ -299,9 +299,26 @@ class Two_Factor_Enrollment_Onboarding {
 	 *    step would show the user real-looking codes that silently do
 	 *    nothing at login — the worst outcome for a recovery path.
 	 * 2. Called without 'method' => 'append', it *replaces* any codes the
-	 *    user already has, invalidating them. This method only ever
-	 *    generates when the user currently has zero codes, and still passes
-	 *    'append' as a second line of defense.
+	 *    user already has, invalidating them. That is why the zero-check
+	 *    below exists: this method only ever calls generate_codes() after
+	 *    Two_Factor_Backup_Codes::codes_remaining_for_user() has confirmed
+	 *    the count is exactly zero, at which point replace and append are
+	 *    semantically identical — there is nothing left to preserve.
+	 *
+	 * 'method' => 'append' is deliberately *not* passed, and must not be
+	 * restored as a "second line of defense". On the append path,
+	 * generate_codes() does
+	 * `(array) get_user_meta( $user->ID, self::BACKUP_CODES_META_KEY, true )`.
+	 * get_user_meta() with $single = true returns '' when the key is
+	 * absent, and `(array) ''` evaluates to `array( '' )`, not `array()` —
+	 * a phantom empty-string hash is prepended ahead of the ten real ones.
+	 * It can never validate (wp_check_password() against '' never matches)
+	 * and nothing ever removes it, so codes_remaining_for_user() overcounts
+	 * by one for the life of the account: a user who has spent all ten real
+	 * codes is told one remains, on the exact screen this plugin exists to
+	 * provide as a lockout-recovery path. The zero-check is the only guard
+	 * this call needs; the append flag adds nothing on top of it and only
+	 * corrupts the result.
 	 *
 	 * Enabling never disturbs the rest of the enabled-providers list or the
 	 * primary provider, which must stay Email.
@@ -326,7 +343,7 @@ class Two_Factor_Enrollment_Onboarding {
 			return array();
 		}
 
-		$codes = Two_Factor_Backup_Codes::get_instance()->generate_codes( $user, array( 'method' => 'append' ) );
+		$codes = Two_Factor_Backup_Codes::get_instance()->generate_codes( $user );
 
 		/*
 		 * The enabled-providers list is read from and written to user meta by
