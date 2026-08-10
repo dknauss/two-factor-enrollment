@@ -1533,4 +1533,59 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'will not be shown again', $html, 'Why to do it now.' );
 		$this->assertStringContainsString( 'generate a new set from your profile', $html, 'That this is recoverable.' );
 	}
+
+	/**
+	 * Specificity, found by rendering the real screen rather than by any
+	 * assertion in this file.
+	 *
+	 * inline_style() already carries
+	 * `body.login-action-… .two-factor-enrollment-onboarding p { margin;
+	 * font-size; line-height }`, which is (0,2,2) — two classes and two
+	 * elements. Every block on this screen that is a <p> and wants a
+	 * different size or margin is therefore in a fight it loses if it is
+	 * written as a bare class selector, (0,2,1). Asserting only that the
+	 * rule appears in the emitted CSS, as the tests above do, cannot see
+	 * this: the declaration is present and correct and simply never
+	 * applies. The caveat rendered at the body size on a real login screen
+	 * for exactly that reason.
+	 *
+	 * So these three selectors must stay qualified — scoped inside the card
+	 * and written `p.<class>` — which takes them to (0,3,2) and wins. This
+	 * asserts the shape that wins, not merely that a declaration exists.
+	 *
+	 * @dataProvider paragraph_rule_provider
+	 *
+	 * @param string $paragraph_class The paragraph class whose rule must outrank the
+	 *                      card's generic paragraph rule.
+	 */
+	public function test_paragraph_rules_outrank_the_generic_paragraph_rule( $paragraph_class ) {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding \.two-factor-enrollment-onboarding p\.' . preg_quote( $paragraph_class, '/' ) . '\s*\{/',
+			$style,
+			"The .{$paragraph_class} rule must be scoped inside the card and qualified with p., or the card's generic p rule outranks it and the declarations never apply."
+		);
+	}
+
+	/**
+	 * The paragraph-class rules that set a property the generic p rule also
+	 * sets, and therefore have to outrank it.
+	 *
+	 * @return array[]
+	 */
+	public function paragraph_rule_provider() {
+		return array(
+			'the codes caveat'         => array( 'two-factor-enrollment-caveat' ),
+			'the acknowledgement'      => array( 'two-factor-enrollment-acknowledge' ),
+			'the method and its badge' => array( 'two-factor-enrollment-method' ),
+		);
+	}
 }

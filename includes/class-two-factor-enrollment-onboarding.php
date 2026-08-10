@@ -647,7 +647,14 @@ class Two_Factor_Enrollment_Onboarding {
 				display: none;
 			}
 
-			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-acknowledge {
+			/* Qualified `p.` and scoped inside the card, at (0,3,2), so it
+			 * outranks the generic `… .two-factor-enrollment-onboarding p`
+			 * rule at (0,2,2). Written as a bare class selector this is
+			 * (0,2,1) and loses: the declarations parse, apply to nothing,
+			 * and the block silently renders at the body size. The same
+			 * applies to every <p> on this screen that wants its own size or
+			 * spacing; see the sibling rules below. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p.two-factor-enrollment-acknowledge {
 				margin: 0 0 16px;
 				font-size: 13px;
 				line-height: 1.5;
@@ -737,12 +744,13 @@ class Two_Factor_Enrollment_Onboarding {
 			 * regenerated -- so it is set quieter than the instruction it
 			 * follows without dropping to a size that reads as fine print
 			 * nobody is expected to have seen. */
-			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-caveat {
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p.two-factor-enrollment-caveat {
 				font-size: 13px;
 				color: #50575e;
 			}
 
-			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-method {
+			/* Qualified for specificity; see the acknowledgement rule above. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p.two-factor-enrollment-method {
 				display: flex;
 				align-items: center;
 				gap: 10px;
