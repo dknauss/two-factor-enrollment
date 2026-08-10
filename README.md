@@ -7,6 +7,8 @@ cookie is issued**.
 Implements the onboarding flow described in
 [WordPress/two-factor#813](https://github.com/WordPress/two-factor/issues/813).
 
+![The one-time onboarding screen: a user's ten backup codes, with options to download or copy them, shown once immediately after their first two-factor login.](assets/screenshot-1.png)
+
 ## What it does
 
 When a covered user logs in without a second factor configured, this plugin adds
