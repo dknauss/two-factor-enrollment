@@ -635,6 +635,49 @@ class Two_Factor_Enrollment_Onboarding {
 				display: none;
 			}
 
+			/* Same mechanism as the copy button above, same reason: the
+			 * acknowledgement ships `hidden` and is revealed by the inline
+			 * script, so a browser that never runs it is never shown a gate
+			 * that cannot be enforced. The UA stylesheet default for
+			 * [hidden] is display:none, but this screen inherits plenty of
+			 * author-origin display rules from wp-core-ui and login.css,
+			 * and one landing on this selector would render a live-looking
+			 * checkbox that gates nothing. Stated explicitly so it cannot. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-acknowledge[hidden] {
+				display: none;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-acknowledge {
+				margin: 0 0 16px;
+				font-size: 13px;
+				line-height: 1.5;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-acknowledge label {
+				display: flex;
+				align-items: flex-start;
+				gap: 8px;
+				cursor: pointer;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-acknowledge input {
+				margin: 2px 0 0;
+				flex: 0 0 auto;
+			}
+
+			/* The blocked state is styling only -- preventDefault() in the
+			 * inline script is what actually stops the navigation. This
+			 * exists so the button does not look clickable while it is not,
+			 * and it is keyed off the aria-disabled attribute the script
+			 * sets, so the visual state and the announced state cannot drift
+			 * apart. Deliberately not the core `.button.disabled` class:
+			 * buttons.css styles it with !important throughout, which would
+			 * make the enabled state unrecoverable once applied. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-continue-button[aria-disabled="true"] {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding {
 				background: #fff;
 				border: 1px solid #c3c4c7;
@@ -760,7 +803,29 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
-	 * JS for this screen's click-to-copy affordance.
+	 * JS for this screen's two progressive enhancements: the acknowledgement
+	 * gate on Continue, and click-to-copy.
+	 *
+	 * They are two separate IIFEs, and that separation is load-bearing. The
+	 * clipboard block returns early when navigator.clipboard is missing —
+	 * which is every plain-HTTP install — so anything sharing its function
+	 * body would silently never run there. The gate is the more important of
+	 * the two and must not inherit an unrelated feature-detect's early exit.
+	 *
+	 * The gate: Continue is a plain working <a href> in the markup, and the
+	 * acknowledgement checkbox ships `hidden`. This block reveals the
+	 * checkbox and only then arms the gate, so the enhancement appears
+	 * exactly when it can be enforced. It never touches the href — blocking
+	 * is preventDefault() on the click, with aria-disabled and a class for
+	 * the visual and assistive-technology state — so a script that fails
+	 * halfway leaves a working link rather than a dead one. It is armed only
+	 * when all three elements are found; on a render with no codes there is
+	 * no checkbox and Continue is left entirely alone.
+	 *
+	 * Blocking moves focus to the checkbox rather than disabling anything.
+	 * The same reasoning as the copy button's status span applies: setting
+	 * .disabled on a focused control throws focus to <body>, and a link is
+	 * not disable-able anyway.
 	 *
 	 * navigator.clipboard is undefined outside a secure context (plain HTTP,
 	 * broadly), so the copy button ships `hidden` in the markup and this
@@ -801,6 +866,41 @@ class Two_Factor_Enrollment_Onboarding {
 	 */
 	private static function inline_script() {
 		return '
+			( function () {
+				var acknowledge = document.querySelector( ".two-factor-enrollment-acknowledge" );
+				var acknowledgeInput = document.querySelector( ".two-factor-enrollment-acknowledge-input" );
+				var continueButton = document.querySelector( ".two-factor-enrollment-continue-button" );
+
+				if ( acknowledge && acknowledgeInput && continueButton ) {
+					var syncGate = function () {
+						if ( acknowledgeInput.checked ) {
+							continueButton.removeAttribute( "aria-disabled" );
+							continueButton.classList.remove( "two-factor-enrollment-blocked" );
+						} else {
+							continueButton.setAttribute( "aria-disabled", "true" );
+							continueButton.classList.add( "two-factor-enrollment-blocked" );
+						}
+					};
+
+					acknowledgeInput.addEventListener( "change", syncGate );
+
+					continueButton.addEventListener( "click", function ( event ) {
+						if ( acknowledgeInput.checked ) {
+							return;
+						}
+
+						// Stop the navigation and put the user on the thing
+						// that is blocking them, rather than leaving them to
+						// work out why a button did nothing.
+						event.preventDefault();
+						acknowledgeInput.focus();
+					} );
+
+					acknowledge.hidden = false;
+					syncGate();
+				}
+			} )();
+
 			( function () {
 				if ( ! window.navigator || ! navigator.clipboard || ! navigator.clipboard.writeText ) {
 					return;
@@ -959,8 +1059,40 @@ class Two_Factor_Enrollment_Onboarding {
 				</p>
 			</section>
 
+			<?php if ( ! empty( $codes ) ) : ?>
+				<?php
+				/*
+				 * The acknowledgement gate. It ships `hidden` and the inline
+				 * script reveals it, which is the whole contract: with
+				 * JavaScript off, or blocked by a CSP, the checkbox never
+				 * appears and Continue behaves exactly as it did before this
+				 * feature existed.
+				 *
+				 * Rendering it visible-but-inert instead would be worse than
+				 * omitting it. It would tell the user something is being
+				 * enforced while nothing is, and any attempt to make it
+				 * enforce server-side — a form post, a required attribute —
+				 * risks the one outcome this screen must never produce: a
+				 * user who cannot leave. The marker is already 'done' by the
+				 * time this renders, so a user stuck here has no second
+				 * chance at the screen, and the screen is the lockout
+				 * recovery path.
+				 *
+				 * Only rendered alongside real codes. With the codes section
+				 * omitted there is nothing to have saved, and the question
+				 * would be unanswerable.
+				 */
+				?>
+				<p class="two-factor-enrollment-acknowledge" hidden>
+					<label>
+						<input type="checkbox" class="two-factor-enrollment-acknowledge-input">
+						<span><?php esc_html_e( 'I’ve saved these codes somewhere safe', 'two-factor-enrollment' ); ?></span>
+					</label>
+				</p>
+			<?php endif; ?>
+
 			<p class="two-factor-enrollment-continue">
-				<a class="button button-primary" href="<?php echo esc_url( $redirect_to ); ?>">
+				<a class="button button-primary two-factor-enrollment-continue-button" href="<?php echo esc_url( $redirect_to ); ?>">
 					<?php esc_html_e( 'Continue', 'two-factor-enrollment' ); ?>
 				</a>
 			</p>
