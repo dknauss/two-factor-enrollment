@@ -635,6 +635,69 @@ class Two_Factor_Enrollment_Onboarding {
 				display: none;
 			}
 
+			/* Same mechanism as the copy button above, same reason: the
+			 * acknowledgement ships `hidden` and is revealed by the inline
+			 * script, so a browser that never runs it is never shown a gate
+			 * that cannot be enforced. The UA stylesheet default for
+			 * [hidden] is display:none, but this screen inherits plenty of
+			 * author-origin display rules from wp-core-ui and login.css,
+			 * and one landing on this selector would render a live-looking
+			 * checkbox that gates nothing. Stated explicitly so it cannot. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-acknowledge[hidden] {
+				display: none;
+			}
+
+			/* Qualified `p.` and scoped inside the card, at (0,3,2), so it
+			 * outranks the generic `… .two-factor-enrollment-onboarding p`
+			 * rule at (0,2,2). Written as a bare class selector this is
+			 * (0,2,1) and loses: the declarations parse, apply to nothing,
+			 * and the block silently renders at the body size. The same
+			 * applies to every <p> on this screen that wants its own size or
+			 * spacing; see the sibling rules below. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p.two-factor-enrollment-acknowledge {
+				margin: 0 0 16px;
+				font-size: 13px;
+				line-height: 1.5;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-acknowledge label {
+				display: flex;
+				align-items: flex-start;
+				gap: 8px;
+				cursor: pointer;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-acknowledge input {
+				margin: 2px 0 0;
+				flex: 0 0 auto;
+			}
+
+			/* The blocked state is styling only -- preventDefault() in the
+			 * inline script is what actually stops the navigation. This
+			 * exists so the button does not look clickable while it is not,
+			 * and it is keyed off the aria-disabled attribute the script
+			 * sets, so the visual state and the announced state cannot drift
+			 * apart. Deliberately not the core `.button.disabled` class:
+			 * buttons.css styles it with !important throughout, which would
+			 * make the enabled state unrecoverable once applied. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-continue-button[aria-disabled="true"] {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+
+			/* Only ever rendered when the two_factor_enrollment_onboarding_header
+			 * filter returns markup, so these rules describe a block that
+			 * does not exist on a default install. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-header {
+				margin: 0 0 20px;
+				text-align: center;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-header img {
+				max-width: 100%;
+				height: auto;
+			}
+
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding {
 				background: #fff;
 				border: 1px solid #c3c4c7;
@@ -674,6 +737,49 @@ class Two_Factor_Enrollment_Onboarding {
 
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p:last-child {
 				margin-bottom: 0;
+			}
+
+			/* Secondary, not hidden: the caveat carries the one piece of
+			 * reassurance on this screen -- that a lost set can be
+			 * regenerated -- so it is set quieter than the instruction it
+			 * follows without dropping to a size that reads as fine print
+			 * nobody is expected to have seen. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p.two-factor-enrollment-caveat {
+				font-size: 13px;
+				color: #50575e;
+			}
+
+			/* Qualified for specificity; see the acknowledgement rule above. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p.two-factor-enrollment-method {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				margin: 0 0 8px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-method-name {
+				font-size: 14px;
+				color: #1d2327;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-method-icon {
+				flex: 0 0 auto;
+				color: #50575e;
+			}
+
+			/* A state chip, not a warning: this is the normal state of an
+			 * offer the user has not taken up yet, so it stays neutral grey
+			 * rather than borrowing any of the notice colours. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-badge {
+				display: inline-block;
+				background: #f0f0f1;
+				border: 1px solid #dcdcde;
+				border-radius: 9px;
+				padding: 1px 10px;
+				font-size: 12px;
+				line-height: 1.6;
+				color: #50575e;
+				white-space: nowrap;
 			}
 
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-credential-block {
@@ -760,7 +866,29 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
-	 * JS for this screen's click-to-copy affordance.
+	 * JS for this screen's two progressive enhancements: the acknowledgement
+	 * gate on Continue, and click-to-copy.
+	 *
+	 * They are two separate IIFEs, and that separation is load-bearing. The
+	 * clipboard block returns early when navigator.clipboard is missing —
+	 * which is every plain-HTTP install — so anything sharing its function
+	 * body would silently never run there. The gate is the more important of
+	 * the two and must not inherit an unrelated feature-detect's early exit.
+	 *
+	 * The gate: Continue is a plain working <a href> in the markup, and the
+	 * acknowledgement checkbox ships `hidden`. This block reveals the
+	 * checkbox and only then arms the gate, so the enhancement appears
+	 * exactly when it can be enforced. It never touches the href — blocking
+	 * is preventDefault() on the click, with aria-disabled and a class for
+	 * the visual and assistive-technology state — so a script that fails
+	 * halfway leaves a working link rather than a dead one. It is armed only
+	 * when all three elements are found; on a render with no codes there is
+	 * no checkbox and Continue is left entirely alone.
+	 *
+	 * Blocking moves focus to the checkbox rather than disabling anything.
+	 * The same reasoning as the copy button's status span applies: setting
+	 * .disabled on a focused control throws focus to <body>, and a link is
+	 * not disable-able anyway.
 	 *
 	 * navigator.clipboard is undefined outside a secure context (plain HTTP,
 	 * broadly), so the copy button ships `hidden` in the markup and this
@@ -801,6 +929,41 @@ class Two_Factor_Enrollment_Onboarding {
 	 */
 	private static function inline_script() {
 		return '
+			( function () {
+				var acknowledge = document.querySelector( ".two-factor-enrollment-acknowledge" );
+				var acknowledgeInput = document.querySelector( ".two-factor-enrollment-acknowledge-input" );
+				var continueButton = document.querySelector( ".two-factor-enrollment-continue-button" );
+
+				if ( acknowledge && acknowledgeInput && continueButton ) {
+					var syncGate = function () {
+						if ( acknowledgeInput.checked ) {
+							continueButton.removeAttribute( "aria-disabled" );
+							continueButton.classList.remove( "two-factor-enrollment-blocked" );
+						} else {
+							continueButton.setAttribute( "aria-disabled", "true" );
+							continueButton.classList.add( "two-factor-enrollment-blocked" );
+						}
+					};
+
+					acknowledgeInput.addEventListener( "change", syncGate );
+
+					continueButton.addEventListener( "click", function ( event ) {
+						if ( acknowledgeInput.checked ) {
+							return;
+						}
+
+						// Stop the navigation and put the user on the thing
+						// that is blocking them, rather than leaving them to
+						// work out why a button did nothing.
+						event.preventDefault();
+						acknowledgeInput.focus();
+					} );
+
+					acknowledge.hidden = false;
+					syncGate();
+				}
+			} )();
+
 			( function () {
 				if ( ! window.navigator || ! navigator.clipboard || ! navigator.clipboard.writeText ) {
 					return;
@@ -868,8 +1031,37 @@ class Two_Factor_Enrollment_Onboarding {
 	public static function render_body( $codes, $redirect_to ) {
 		$profile_url = admin_url( 'profile.php#two-factor-options' );
 
+		/**
+		 * Optional markup rendered above the onboarding card.
+		 *
+		 * This screen has no WordPress logo: the default one linked to
+		 * wordpress.org from directly above one-time recovery codes, and
+		 * following any outbound link here costs the user those codes for
+		 * good — the screen is consumed before it renders. Removing it left
+		 * a space a site deploying this for its own users has an obvious use
+		 * for, and this filter is that space.
+		 *
+		 * The default is an empty string and must stay one. Shipping a
+		 * linked mark by default would reintroduce exactly the problem the
+		 * logo removal solved. A site that supplies markup containing a link
+		 * has made that decision for itself, knowing its own users; this
+		 * plugin cannot make it for them.
+		 *
+		 * The value is run through wp_kses_post() before output.
+		 *
+		 * @param string $header Markup to render above the card. Default ''.
+		 */
+		$header = apply_filters( 'two_factor_enrollment_onboarding_header', '' );
+		$header = wp_kses_post( (string) $header );
+
 		ob_start();
 		?>
+		<?php if ( '' !== trim( $header ) ) : ?>
+			<div class="two-factor-enrollment-header">
+				<?php echo $header; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Site-supplied markup, sanitized with wp_kses_post() above; escaping it again would render the tags as text and defeat the filter's purpose. ?>
+			</div>
+		<?php endif; ?>
+
 		<div class="two-factor-enrollment-onboarding">
 			<section class="two-factor-enrollment-section">
 				<h2><?php esc_html_e( 'Two-factor authentication is on', 'two-factor-enrollment' ); ?></h2>
@@ -883,8 +1075,31 @@ class Two_Factor_Enrollment_Onboarding {
 				<section class="two-factor-enrollment-section">
 					<h3><?php esc_html_e( 'Save your backup codes', 'two-factor-enrollment' ); ?></h3>
 
+					<?php
+					/*
+					 * Instruction first, caveat second and quieter. As one
+					 * paragraph the only sentence the user has to act on —
+					 * save these now — sat in the middle, behind a
+					 * conditional about losing email access and ahead of a
+					 * clause about regenerating them later.
+					 *
+					 * Every clause here earned its place and none may be
+					 * dropped in the name of brevity. The regeneration
+					 * clause in particular was added after a review found
+					 * the copy overstated the permanence of the codes:
+					 * "will not be shown again" is true of these codes but
+					 * reads as though recovery is now impossible, which
+					 * would frighten a user who has already lost them into
+					 * thinking there is nothing left to do. The suite
+					 * asserts all of them survive.
+					 */
+					?>
 					<p>
-						<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — these codes will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
+						<?php esc_html_e( 'Save these somewhere safe now. If you ever lose access to your email, they are the only way back into your account, and each code works once.', 'two-factor-enrollment' ); ?>
+					</p>
+
+					<p class="two-factor-enrollment-caveat">
+						<?php esc_html_e( 'They will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
 					</p>
 
 					<div class="two-factor-enrollment-credential-block">
@@ -948,6 +1163,37 @@ class Two_Factor_Enrollment_Onboarding {
 			<section class="two-factor-enrollment-section">
 				<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
 
+				<?php
+				/*
+				 * "Not set up" is a statement of fact, not a guess. This
+				 * screen is only reachable with the onboarding marker in the
+				 * 'pending' state, which only the gate sets, and only for a
+				 * user who had no configured provider at all when they
+				 * signed in. A user who already had an authenticator app
+				 * never enrolls through this plugin and never arrives here.
+				 */
+				?>
+				<p class="two-factor-enrollment-method">
+					<?php
+					/*
+					 * Inline SVG rather than dashicons: the login screen
+					 * never enqueues that stylesheet, so the alternative is
+					 * loading an entire icon font for one glyph. It is
+					 * decorative — the text beside it already says
+					 * "Authenticator app" — so it is hidden from assistive
+					 * technology and taken out of the tab order, and it
+					 * inherits currentColor so it tracks the label rather
+					 * than needing its own colour rule.
+					 */
+					?>
+					<svg class="two-factor-enrollment-method-icon" width="18" height="18" viewBox="0 0 20 20" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+						<rect x="5.75" y="2.75" width="8.5" height="14.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/>
+						<path d="M8.75 14.75h2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+					</svg>
+					<strong class="two-factor-enrollment-method-name"><?php esc_html_e( 'Authenticator app', 'two-factor-enrollment' ); ?></strong>
+					<span class="two-factor-enrollment-badge"><?php esc_html_e( 'Not set up', 'two-factor-enrollment' ); ?></span>
+				</p>
+
 				<p>
 					<?php esc_html_e( 'An authenticator app generates codes instantly, with no waiting for email. You can set one up any time from your profile.', 'two-factor-enrollment' ); ?>
 				</p>
@@ -959,8 +1205,40 @@ class Two_Factor_Enrollment_Onboarding {
 				</p>
 			</section>
 
+			<?php if ( ! empty( $codes ) ) : ?>
+				<?php
+				/*
+				 * The acknowledgement gate. It ships `hidden` and the inline
+				 * script reveals it, which is the whole contract: with
+				 * JavaScript off, or blocked by a CSP, the checkbox never
+				 * appears and Continue behaves exactly as it did before this
+				 * feature existed.
+				 *
+				 * Rendering it visible-but-inert instead would be worse than
+				 * omitting it. It would tell the user something is being
+				 * enforced while nothing is, and any attempt to make it
+				 * enforce server-side — a form post, a required attribute —
+				 * risks the one outcome this screen must never produce: a
+				 * user who cannot leave. The marker is already 'done' by the
+				 * time this renders, so a user stuck here has no second
+				 * chance at the screen, and the screen is the lockout
+				 * recovery path.
+				 *
+				 * Only rendered alongside real codes. With the codes section
+				 * omitted there is nothing to have saved, and the question
+				 * would be unanswerable.
+				 */
+				?>
+				<p class="two-factor-enrollment-acknowledge" hidden>
+					<label>
+						<input type="checkbox" class="two-factor-enrollment-acknowledge-input">
+						<span><?php esc_html_e( 'I’ve saved these codes somewhere safe', 'two-factor-enrollment' ); ?></span>
+					</label>
+				</p>
+			<?php endif; ?>
+
 			<p class="two-factor-enrollment-continue">
-				<a class="button button-primary" href="<?php echo esc_url( $redirect_to ); ?>">
+				<a class="button button-primary two-factor-enrollment-continue-button" href="<?php echo esc_url( $redirect_to ); ?>">
 					<?php esc_html_e( 'Continue', 'two-factor-enrollment' ); ?>
 				</a>
 			</p>

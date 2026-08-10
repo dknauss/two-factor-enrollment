@@ -10,114 +10,126 @@ Their screen is **pre-enrollment**: it asks the user to pick a method. Ours is
 exists to hand over recovery codes. So the affordances transfer; the structure
 does not. See "Deliberately not taken" at the end.
 
-Ordered by value. Each item is independently shippable.
+**Items 1–5 have shipped.** They are kept below as the reasoning behind what is
+on the screen now, not as work to do. Open work is in "Still open" at the end.
 
 ---
 
-## 1. Gate Continue behind acknowledging the codes
+## 1. Gate Continue behind acknowledging the codes — shipped
 
-**The problem it solves.** This is the screen's one remaining serious UX risk. The
-codes are displayed exactly once — the compare-and-swap consumes the one-time
-token before rendering — and `Continue` is live from the moment the page loads.
-A user can click past ten recovery codes without saving any of them. The copy
-mentions they can regenerate from their profile, but nothing slows the click down.
+**The problem it solved.** The codes are displayed exactly once — the
+compare-and-swap consumes the one-time token before rendering — and `Continue`
+was live from the moment the page loaded. A user could click past ten recovery
+codes without saving any of them.
 
-**The pattern.** LearnDash greys out `Continue` until at least one method is
-enabled, so the screen cannot be left in an unprotected state. The direct analogue
-here is an explicit acknowledgement:
+**What shipped.** An explicit acknowledgement:
 
 > ☐ I've saved these codes somewhere safe
 
 with `Continue` inert until it is checked.
 
-**Shape.** Progressive enhancement, and this constraint is not optional: `Continue`
-is an `<a>`, and the screen must stay usable with JavaScript off. Render the
-checkbox and a working `Continue`; the inline script adds the gating. Without
-JavaScript the checkbox is decorative and `Continue` behaves exactly as it does
-today. **Never ship a version where no-JS users cannot leave the screen** — that
-converts a UX nudge into a trap on the recovery path.
+**How the no-JS constraint is honored.** The server renders an ordinary working
+`<a href>` and a `hidden` checkbox; the inline script reveals the checkbox and
+only then arms the gate. With JavaScript off the checkbox never appears and
+`Continue` behaves exactly as it did before. Blocking is `preventDefault()` plus
+`aria-disabled` and a class — never the `href` — so a script that fails halfway
+leaves a working link rather than a dead one. **This is not decorative:** a user
+who cannot leave this screen is locked out by a UX nudge, on the recovery path,
+with the marker already `done` and no second chance at the screen.
 
-**Cost.** Small. One checkbox, a few lines in the existing inline script, one CSS
-rule. No new state, no new request.
+The gate lives in its own IIFE. The clipboard block returns early when
+`navigator.clipboard` is absent, which is every plain-HTTP install; sharing that
+function body would have silently disarmed the gate there.
 
-**Risk.** Mild friction on a screen users want to leave. Acceptable: the friction
-is exactly the point, and it is one click.
+Only rendered alongside real codes — with the codes section omitted there is
+nothing to have saved.
 
-**Tests.** Assert the checkbox renders; assert `Continue` carries no disabling
-attribute in the server-rendered HTML (proving no-JS users are not trapped);
-assert the emitted script wires the gate. That last one matters — an earlier
-review found the suite asserting markup while the behaviour lived in the script.
+**Tests.** Markup and emitted script both, mutation-verified in both directions:
+adding `aria-disabled` to the server-rendered link fails the no-JS guard, and
+dropping `preventDefault` fails the gate test.
 
 ---
 
-## 2. Status badges on the upgrade offer
+## 2. Status badge on the upgrade offer — shipped
 
-**The pattern.** Each LearnDash method shows a state chip — `Disabled` / `Enable`.
-State is legible without reading prose.
-
-**Here.** The "Want something faster?" block is currently an undifferentiated
-paragraph and a link. It could read:
+The "Want something faster?" block was an undifferentiated paragraph and a link.
+It now leads with the method name and a neutral state chip:
 
 > **Authenticator app** · Not set up
-> Generates codes instantly, with no waiting for email.
 
-Only the optional-upgrade block. The required path shows no method list at all,
-by design.
+"Not set up" is a fact rather than a guess: the screen is only reachable with the
+onboarding marker `pending`, which only the gate sets, and only for a user who
+had no configured provider when they signed in. Anyone who already had an
+authenticator app never enrolls through this plugin.
 
-**Cost.** Trivial — markup and one CSS rule. No JavaScript.
-
-**Value.** Moderate. Mostly it makes the upgrade feel like a thing with a state
-rather than a footnote.
-
----
-
-## 3. Method icons
-
-**The pattern.** LearnDash anchors each method with a small icon.
-
-**Here.** One icon beside the authenticator-app offer, and possibly one on the
-codes block.
-
-**Cost and caveat.** The login screen does not enqueue `dashicons` by default, so
-this means either enqueueing it — weight for one glyph — or inlining SVG. Inline
-SVG is the better trade and keeps the no-asset-file property.
-
-**Value.** Low. Cosmetic. Do it only if items 1 and 2 land and the screen still
-reads flat.
+The chip stays grey — not having taken up an optional upgrade is the normal
+state, not a warning.
 
 ---
 
-## 4. Let sites brand the header space
+## 3. Method icon — shipped
 
-**The pattern.** LearnDash replaces the WordPress logo with their own mark.
+Inline SVG beside the authenticator offer. Not dashicons: the login screen never
+enqueues that stylesheet, so the alternative was loading an entire icon font for
+one glyph, and the plugin still ships no asset files.
 
-**Here.** We removed the logo entirely — it linked off-site to wordpress.org,
-directly above codes that navigating away destroys — which leaves the space empty.
-An agency deploying this for a client has an obvious use for it.
+Decorative, so `aria-hidden` and `focusable="false"` — the text beside it already
+reads "Authenticator app". It inherits `currentColor` so it tracks the label.
 
-**Shape.** A filter rendering optional markup above the card, defaulting to
-nothing. Do **not** restore a linked logo: the reason the original was removed is
-that any outbound link on this screen costs the user their codes. If markup with a
-link is supplied, that is the site's decision, but the default must stay
-link-free.
-
-**Cost.** Small. One filter, one optional block.
+The codes block was left without one. The method row is a self-contained
+component; the codes block is the screen's subject and does not need labelling.
 
 ---
 
-## 5. Tighten the copy
+## 4. Let sites brand the header space — shipped
 
-**The pattern.** LearnDash uses a bold method name and one terse line. Ours uses
-full paragraphs.
+`two_factor_enrollment_onboarding_header`, default `''`, rendered above the card.
+Documented in the README's Filters section.
 
-**Here.** The backup-codes explanation is five lines and carries the regeneration
-caveat, the once-only warning, and the save instruction in one block. It could
-split into a short imperative line plus a smaller caveat.
+The default is empty and link-free deliberately. The WordPress logo was removed
+because it linked to wordpress.org from directly above one-time codes that
+navigating away destroys, and that reasoning applies to whatever replaces it. A
+site supplying markup with a link has made that call for its own users.
 
-**Cost.** Copy editing only. **Care required:** every clause in that paragraph
-was added deliberately — the "you can generate a new set from your profile"
-sentence exists because a review found the original copy overstated the
-permanence of the codes. Shorten without dropping the substance.
+Run through `wp_kses_post()` — a plugin registering this filter is trusted to put
+a logo on the page, which is not the same as being trusted to inject a script
+above recovery codes on a screen the user was forced onto. That also rules out
+inline SVG; supply a logo as an `<img>`, `data:` URI included if you want to
+avoid the request.
+
+---
+
+## 5. Tighten the copy — shipped
+
+The backup-codes explanation was five lines carrying the regeneration caveat, the
+once-only warning and the save instruction in one block, with the only sentence
+the user has to act on sitting in the middle of it. Split into a leading
+imperative and a quieter caveat.
+
+All five substantive clauses survive and the suite asserts each individually. The
+regeneration clause especially — a review added it after finding the copy
+overstated the permanence of the codes, and "will not be shown again" reads as
+though recovery is now impossible without it.
+
+The caveat is set secondary, not fine print: it carries the one piece of
+reassurance on the screen.
+
+---
+
+## Still open
+
+**The upgrade offer does not check whether TOTP is available site-wide.** Found
+while doing item 2, pre-existing, not fixed. If `Two_Factor_Totp` is removed via
+the `two_factor_providers` filter, the "Want something faster?" section still
+renders and still links to the profile screen, where the user will find nothing
+to set up. The status chip makes this slightly more pointed than it was — the
+offer now asserts a state for a method that is not on offer at all.
+
+`Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes()` already does
+exactly this check for Backup Codes and returns early when the provider is
+disabled site-wide; the same shape applies here. Left out of the item 2 commit
+because it is a behavior change rather than a presentation one, and worth its own
+review.
 
 ---
 

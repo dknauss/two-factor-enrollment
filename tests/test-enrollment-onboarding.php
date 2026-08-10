@@ -1080,4 +1080,512 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 			'The Continue button\'s container must right-align it now that float is no longer doing so.'
 		);
 	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * The acknowledgement gate (docs/ux-backlog.md item 1).
+	 *
+	 * The codes are shown exactly once -- claim_onboarding() consumes the
+	 * one-time token before render() prints anything -- and Continue is live
+	 * from the moment the page loads, so ten recovery codes can be clicked
+	 * past unsaved. The gate slows that click down.
+	 *
+	 * Every test below exists to hold one of two lines that must not be
+	 * crossed: the gate must be real when JavaScript runs, and it must not
+	 * exist at all when JavaScript does not. A user with JavaScript off who
+	 * cannot leave this screen is locked out of their own site by a UX
+	 * nudge, on the recovery path, with the marker already consumed.
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * Isolate the Continue anchor's opening tag from the rendered screen.
+	 *
+	 * Deliberately not a substring search over the whole document: the card
+	 * carries a second .button-primary (Download codes), and asserting
+	 * against the full HTML would let an attribute on the wrong element
+	 * satisfy -- or wrongly fail -- the assertions below.
+	 *
+	 * @param string $html Rendered screen markup.
+	 * @return string The Continue link's opening tag.
+	 */
+	private function continue_link_tag( $html ) {
+		$start = strpos( $html, '<a class="button button-primary two-factor-enrollment-continue-button"' );
+
+		$this->assertNotFalse( $start, 'The Continue link markup was not found in render_body() output.' );
+
+		$tag = substr( $html, $start );
+		$end = strpos( $tag, '>' );
+
+		$this->assertNotFalse( $end, 'The Continue link tag was not terminated.' );
+
+		return substr( $tag, 0, $end + 1 );
+	}
+
+	/**
+	 * The emitted inline script for this screen.
+	 *
+	 * @return string
+	 */
+	private function emitted_inline_script() {
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		return implode( "\n", (array) wp_scripts()->get_data( 'two-factor-enrollment-onboarding', 'after' ) );
+	}
+
+	/**
+	 * The checkbox is the affordance itself: without it in the markup there
+	 * is nothing for the script to wire up.
+	 */
+	public function test_render_body_offers_an_acknowledgement_checkbox_with_the_codes() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( 'two-factor-enrollment-acknowledge-input', $html );
+		$this->assertStringContainsString( 'type="checkbox"', $html );
+	}
+
+	/**
+	 * Nothing to acknowledge, no acknowledgement. render_body() omits the
+	 * whole codes section when the user already had codes, or when Backup
+	 * Codes is disabled site-wide; a checkbox asking whether they saved
+	 * codes that were never displayed would be nonsense, and gating Continue
+	 * behind it would be friction with no purpose at all.
+	 */
+	public function test_render_body_omits_the_acknowledgement_when_there_are_no_codes() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringNotContainsString( 'two-factor-enrollment-acknowledge', $html );
+	}
+
+	/**
+	 * The no-JS trap guard, and the single most important test in this
+	 * group. Whatever the script does at runtime, the *server-rendered*
+	 * Continue link must be an ordinary working anchor: no aria-disabled,
+	 * no disabled attribute, no pre-applied disabling class. A browser that
+	 * never runs the script must see the screen exactly as it was before
+	 * this feature existed.
+	 *
+	 * Asserted against the Continue tag alone rather than the document,
+	 * because the copy button legitimately ships with `hidden` and would
+	 * mask a document-wide assertion.
+	 */
+	public function test_render_body_continue_link_is_never_disabled_server_side() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$tag = $this->continue_link_tag( $html );
+
+		$this->assertStringNotContainsString( 'aria-disabled', $tag );
+		$this->assertStringNotContainsString( 'disabled', $tag );
+		$this->assertStringContainsString( 'href="', $tag );
+	}
+
+	/**
+	 * The same guarantee for the case that matters most: even alongside the
+	 * codes, with the acknowledgement present and unchecked, the link the
+	 * server sends is live. The gate is applied by the script or not at all.
+	 */
+	public function test_render_body_continue_link_href_is_the_real_destination() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$tag = $this->continue_link_tag( $html );
+
+		$this->assertStringContainsString( esc_url( admin_url() ), $tag );
+	}
+
+	/**
+	 * A checkbox that appears to gate Continue but cannot -- because the
+	 * script never ran -- is worse than no checkbox: it tells the user
+	 * something is being enforced when nothing is. So it ships `hidden` and
+	 * the script reveals it, the same contract the copy button already
+	 * follows.
+	 *
+	 * The `hidden` attribute alone does not settle it. login_header() puts
+	 * `wp-core-ui` on <body>, and author-origin rules there beat the
+	 * `[hidden]` UA default -- the exact mechanism that let a
+	 * non-functional copy button render in the Critical this project
+	 * already shipped once. So this asserts the emitted CSS actually
+	 * computes to display:none as well.
+	 */
+	public function test_acknowledgement_ships_hidden_and_the_css_actually_hides_it() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$this->assertMatchesRegularExpression(
+			'/<p class="two-factor-enrollment-acknowledge"[^>]*\bhidden\b/',
+			$html,
+			'The acknowledgement must ship hidden, so a no-JS browser never sees a gate that cannot work.'
+		);
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/\.two-factor-enrollment-acknowledge\[hidden\]\s*\{[^}]*display:\s*none/',
+			$style,
+			'The emitted CSS must actually hide the [hidden] acknowledgement, not merely carry a script that intends to reveal it.'
+		);
+	}
+
+	/**
+	 * The gate itself, asserted where it lives. Every prior review finding
+	 * of this class came from tests that inspected markup while the
+	 * behaviour sat in the script, so these read the emitted script text.
+	 *
+	 * Four things have to be true together, and each assertion kills a
+	 * different way of shipping a gate that does not gate: the script has to
+	 * find the checkbox, react to it changing, actually stop the navigation
+	 * when unchecked, and mark the link's state for assistive technology
+	 * rather than only greying it visually.
+	 */
+	public function test_emitted_script_wires_the_acknowledgement_gate() {
+		$script = $this->emitted_inline_script();
+
+		$this->assertStringContainsString(
+			'two-factor-enrollment-acknowledge-input',
+			$script,
+			'The script must locate the acknowledgement checkbox.'
+		);
+		$this->assertStringContainsString(
+			'"change"',
+			$script,
+			'The gate must re-evaluate when the checkbox changes, or it can never open.'
+		);
+		$this->assertStringContainsString(
+			'preventDefault',
+			$script,
+			'An unchecked gate must actually stop the navigation; styling a link as inert does not make it inert.'
+		);
+		$this->assertStringContainsString(
+			'aria-disabled',
+			$script,
+			'The blocked state must be exposed to assistive technology, not only rendered visually.'
+		);
+	}
+
+	/**
+	 * The script must reveal the acknowledgement it is gating on. Without
+	 * this the checkbox stays hidden, the gate stays shut, and Continue
+	 * becomes unreachable for every user who *does* run JavaScript -- the
+	 * no-JS trap, inverted.
+	 */
+	public function test_emitted_script_reveals_the_acknowledgement_it_gates_on() {
+		$script = $this->emitted_inline_script();
+
+		$this->assertMatchesRegularExpression(
+			'/acknowledge\w*\.hidden\s*=\s*false/',
+			$script,
+			'The script must unhide the acknowledgement block once it has wired the gate up.'
+		);
+	}
+
+	/**
+	 * The gate must never be armed unless the script has found every part of
+	 * it. If the checkbox is missing -- the no-codes render, where
+	 * render_body() omits the acknowledgement entirely -- the script must
+	 * leave Continue alone rather than blocking a link nothing can unblock.
+	 *
+	 * This asserts the guard exists by structure: the code that blocks
+	 * navigation has to sit inside a conditional that requires the checkbox.
+	 */
+	public function test_emitted_script_leaves_continue_alone_when_there_is_no_checkbox() {
+		$script = $this->emitted_inline_script();
+
+		$found = preg_match(
+			'/if\s*\(\s*acknowledge\s*&&\s*acknowledgeInput\s*&&\s*continueButton\s*\)\s*\{/',
+			$script,
+			$matches
+		);
+
+		$this->assertSame(
+			1,
+			$found,
+			'The gate must be armed only when the acknowledgement, its checkbox and the Continue button are all present.'
+		);
+	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * The upgrade offer's status badge (docs/ux-backlog.md item 2).
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * The offer names the method and states its status, so a user can tell
+	 * at a glance that this is a thing they do not yet have rather than
+	 * having to infer it from prose.
+	 *
+	 * "Not set up" is a statement of fact here, not a guess. This screen is
+	 * only reached with the onboarding marker in the 'pending' state, which
+	 * only Two_Factor_Enrollment_Gate::persist_enrollment() sets, and only
+	 * for a user who had no configured provider at all when they logged in.
+	 * A user who already had an authenticator app configured never enrolls
+	 * through this plugin and never sees this screen.
+	 */
+	public function test_render_body_gives_the_authenticator_offer_a_name_and_a_status() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringContainsString( 'two-factor-enrollment-badge', $html );
+		$this->assertStringContainsString( 'Authenticator app', $html );
+		$this->assertStringContainsString( 'Not set up', $html );
+	}
+
+	/**
+	 * The badge is a state chip, so it has to read as one. Unstyled it is
+	 * just two more words in a paragraph, which is the thing this item
+	 * exists to stop.
+	 */
+	public function test_login_enqueue_scripts_styles_the_status_badge() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding \.two-factor-enrollment-badge\s*\{/',
+			$style,
+			'The status badge must be styled, and scoped to this screen like everything else here.'
+		);
+	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * The method icon (docs/ux-backlog.md item 3).
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * Inline SVG, not dashicons: the login screen does not enqueue the
+	 * dashicons stylesheet, so using it would mean pulling in a whole icon
+	 * font for one glyph — and this plugin still ships no asset files at
+	 * all. An <img> would be a second HTTP request for the same reason.
+	 */
+	public function test_render_body_draws_the_method_icon_inline() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringContainsString( '<svg', $html );
+		$this->assertStringContainsString( 'two-factor-enrollment-method-icon', $html );
+		$this->assertStringNotContainsString( 'dashicons', $html );
+	}
+
+	/**
+	 * The icon is decorative and must be hidden from assistive technology.
+	 * The text immediately beside it already reads "Authenticator app"; an
+	 * exposed icon would either announce that twice or, unlabelled,
+	 * announce nothing useful while still taking a stop in the reading
+	 * order. focusable="false" covers the same ground for the tab order,
+	 * where an <svg> is focusable by default in some engines.
+	 */
+	public function test_render_body_method_icon_is_decorative() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$start = strpos( $html, '<svg' );
+		$this->assertNotFalse( $start, 'The method icon SVG was not found.' );
+
+		$tag = substr( $html, $start );
+		$end = strpos( $tag, '>' );
+		$this->assertNotFalse( $end, 'The SVG tag was not terminated.' );
+
+		$tag = substr( $tag, 0, $end + 1 );
+
+		$this->assertStringContainsString( 'aria-hidden="true"', $tag );
+		$this->assertStringContainsString( 'focusable="false"', $tag );
+	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * Header branding (docs/ux-backlog.md item 4).
+	 *
+	 * The WordPress logo was removed from this screen because it linked to
+	 * wordpress.org, directly above one-time codes that navigating away
+	 * destroys. That left a space an agency deploying this for a client has
+	 * an obvious use for — but the reason the original was removed applies
+	 * to whatever replaces it, so the default has to stay empty and
+	 * link-free. Supplying markup is a site's decision to make; shipping
+	 * one is not ours.
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * Nothing by default. Not an empty wrapper, not a placeholder — no
+	 * markup at all, so a site that never registers the filter renders
+	 * byte-for-byte what it rendered before the filter existed.
+	 */
+	public function test_render_body_emits_no_header_branding_by_default() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringNotContainsString( 'two-factor-enrollment-header', $html );
+	}
+
+	/**
+	 * Supplied markup renders, and renders *above* the card — the space the
+	 * removed logo used to occupy. Inside the card it would compete with the
+	 * codes for the reader's attention, which is the opposite of the point.
+	 */
+	public function test_render_body_renders_filtered_header_branding_above_the_card() {
+		add_filter(
+			'two_factor_enrollment_onboarding_header',
+			function () {
+				return '<p class="acme-brand">Acme Corp</p>';
+			}
+		);
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		remove_all_filters( 'two_factor_enrollment_onboarding_header' );
+
+		$branding = strpos( $html, 'Acme Corp' );
+		$card     = strpos( $html, '<div class="two-factor-enrollment-onboarding">' );
+
+		$this->assertNotFalse( $branding, 'Filtered header markup did not render.' );
+		$this->assertNotFalse( $card, 'The onboarding card was not found.' );
+		$this->assertLessThan( $card, $branding, 'Header branding must render above the card, not inside it.' );
+	}
+
+	/**
+	 * The filter's value is markup a site author supplies, so it goes
+	 * through wp_kses_post() rather than being echoed raw. A plugin or
+	 * theme registering this filter is trusted to a point, but "trusted to
+	 * put a logo here" is not "trusted to inject a script into the login
+	 * page, above one-time recovery codes, on a screen the user was forced
+	 * onto". Ordinary post markup survives; a <script> does not.
+	 */
+	public function test_render_body_sanitizes_filtered_header_branding() {
+		add_filter(
+			'two_factor_enrollment_onboarding_header',
+			function () {
+				return '<script>alert(1)</script><p><strong>Acme</strong></p>';
+			}
+		);
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		remove_all_filters( 'two_factor_enrollment_onboarding_header' );
+
+		$this->assertStringNotContainsString( '<script>', $html );
+		$this->assertStringContainsString( '<strong>Acme</strong>', $html );
+	}
+
+	/**
+	 * A filter that returns nothing useful must not leave an empty wrapper
+	 * behind — an empty styled block is a visible gap on a screen whose
+	 * spacing was deliberately tuned.
+	 */
+	public function test_render_body_emits_no_wrapper_for_empty_header_branding() {
+		add_filter( 'two_factor_enrollment_onboarding_header', '__return_empty_string' );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		remove_all_filters( 'two_factor_enrollment_onboarding_header' );
+
+		$this->assertStringNotContainsString( 'two-factor-enrollment-header', $html );
+	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * The codes copy (docs/ux-backlog.md item 5).
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * The instruction leads; the caveat follows in its own, quieter block.
+	 * As one five-line paragraph the actual instruction — save these now —
+	 * sat in the middle of it, behind a conditional about losing email
+	 * access and ahead of a clause about regenerating them later.
+	 */
+	public function test_render_body_splits_the_codes_copy_into_an_imperative_and_a_caveat() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$this->assertStringContainsString( 'two-factor-enrollment-caveat', $html );
+
+		$lead   = strpos( $html, 'Save these somewhere safe now' );
+		$caveat = strpos( $html, 'two-factor-enrollment-caveat' );
+
+		$this->assertNotFalse( $lead, 'The codes copy must lead with the instruction.' );
+		$this->assertLessThan( $caveat, $lead, 'The instruction must come before the caveat, not after it.' );
+	}
+
+	/**
+	 * Shortening this copy must not cost it any substance. Every clause
+	 * below is here because something went wrong without it — the
+	 * regeneration clause in particular was added after a review found the
+	 * original overstated the permanence of the codes (see
+	 * test_render_body_does_not_overstate_the_permanence_of_the_codes()).
+	 * This asserts all five survive the rewrite.
+	 */
+	public function test_render_body_codes_copy_keeps_every_substantive_clause() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$this->assertStringContainsString( 'lose access to your email', $html, 'When the codes matter.' );
+		$this->assertStringContainsString( 'only way back into your account', $html, 'What they are for.' );
+		$this->assertStringContainsString( 'works once', $html, 'That they are not reusable.' );
+		$this->assertStringContainsString( 'Save these somewhere safe now', $html, 'What to do.' );
+		$this->assertStringContainsString( 'will not be shown again', $html, 'Why to do it now.' );
+		$this->assertStringContainsString( 'generate a new set from your profile', $html, 'That this is recoverable.' );
+	}
+
+	/**
+	 * Specificity, found by rendering the real screen rather than by any
+	 * assertion in this file.
+	 *
+	 * inline_style() already carries
+	 * `body.login-action-… .two-factor-enrollment-onboarding p { margin;
+	 * font-size; line-height }`, which is (0,2,2) — two classes and two
+	 * elements. Every block on this screen that is a <p> and wants a
+	 * different size or margin is therefore in a fight it loses if it is
+	 * written as a bare class selector, (0,2,1). Asserting only that the
+	 * rule appears in the emitted CSS, as the tests above do, cannot see
+	 * this: the declaration is present and correct and simply never
+	 * applies. The caveat rendered at the body size on a real login screen
+	 * for exactly that reason.
+	 *
+	 * So these three selectors must stay qualified — scoped inside the card
+	 * and written `p.<class>` — which takes them to (0,3,2) and wins. This
+	 * asserts the shape that wins, not merely that a declaration exists.
+	 *
+	 * @dataProvider paragraph_rule_provider
+	 *
+	 * @param string $paragraph_class The paragraph class whose rule must outrank the
+	 *                      card's generic paragraph rule.
+	 */
+	public function test_paragraph_rules_outrank_the_generic_paragraph_rule( $paragraph_class ) {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding \.two-factor-enrollment-onboarding p\.' . preg_quote( $paragraph_class, '/' ) . '\s*\{/',
+			$style,
+			"The .{$paragraph_class} rule must be scoped inside the card and qualified with p., or the card's generic p rule outranks it and the declarations never apply."
+		);
+	}
+
+	/**
+	 * The paragraph-class rules that set a property the generic p rule also
+	 * sets, and therefore have to outrank it.
+	 *
+	 * @return array[]
+	 */
+	public function paragraph_rule_provider() {
+		return array(
+			'the codes caveat'         => array( 'two-factor-enrollment-caveat' ),
+			'the acknowledgement'      => array( 'two-factor-enrollment-acknowledge' ),
+			'the method and its badge' => array( 'two-factor-enrollment-method' ),
+		);
+	}
 }
