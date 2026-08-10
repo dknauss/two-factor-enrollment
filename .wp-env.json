@@ -1,6 +1,6 @@
 {
 	"phpVersion": "7.4",
-	"plugins": [ ".", "WordPress/two-factor" ],
+	"plugins": [ "WordPress/two-factor", "." ],
 	"env": {
 		"tests": {
 			"config": {
