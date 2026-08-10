@@ -749,27 +749,49 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	 * The whole point of gating on the current action: this hook fires on
 	 * every wp-login.php request, for every action, so a request for the
 	 * ordinary login screen (or any other screen) must leave no trace behind
-	 * — no registered script handle, nothing enqueued.
+	 * — no registered script handle, nothing enqueued, and no inline CSS
+	 * attached to the shared 'login' style handle either.
+	 *
+	 * The wp_script_is() assertion alone does not exercise the
+	 * wp_add_inline_style( 'login', ... ) call: that call attaches to a
+	 * handle the ordinary login screen also uses, rather than registering
+	 * anything of its own, so a version of login_enqueue_scripts() that
+	 * called it unconditionally — above, rather than below, the
+	 * is_this_screen() guard — would still pass a script-only assertion.
+	 * Registering and enqueuing a stub 'login' handle first, the way the
+	 * real login_header() would have by the time this hook fires, makes
+	 * wp_styles()->get_data( 'login', 'after' ) the thing that actually
+	 * proves the CSS is scoped to this screen's own action.
 	 */
 	public function test_login_enqueue_scripts_does_nothing_off_its_own_screen() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
 		$_REQUEST['action'] = 'login';
 
 		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
 
 		$this->assertFalse( wp_script_is( 'two-factor-enrollment-onboarding', 'registered' ) );
+		$this->assertEmpty( wp_styles()->get_data( 'login', 'after' ) );
 	}
 
 	/**
 	 * Same guard, the other near-miss: no action at all (the default the
 	 * ordinary login screen is reached with) must also leave nothing
-	 * enqueued.
+	 * enqueued and no inline CSS attached to 'login'. See the docblock above
+	 * for why the style assertion, not just the script assertion, is what
+	 * actually discriminates here.
 	 */
 	public function test_login_enqueue_scripts_does_nothing_without_an_action() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
 		unset( $_REQUEST['action'] );
 
 		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
 
 		$this->assertFalse( wp_script_is( 'two-factor-enrollment-onboarding', 'registered' ) );
+		$this->assertEmpty( wp_styles()->get_data( 'login', 'after' ) );
 	}
 
 	/**
