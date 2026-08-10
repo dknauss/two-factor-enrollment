@@ -27,7 +27,10 @@
 	},
 	"scripts": {
 		"lint": "phpcs",
-		"test": "phpunit",
+		"test": [
+			"phpunit",
+			"phpunit -c phpunit-no-dependency.xml.dist"
+		],
 		"format": "phpcbf"
 	}
 }

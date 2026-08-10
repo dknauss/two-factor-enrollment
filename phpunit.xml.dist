@@ -8,6 +8,8 @@
 	<testsuites>
 		<testsuite name="All Tests">
 			<directory suffix=".php">tests</directory>
+			<exclude>tests/bootstrap-no-dependency.php</exclude>
+			<exclude>tests/no-dependency</exclude>
 		</testsuite>
 	</testsuites>
 </phpunit>

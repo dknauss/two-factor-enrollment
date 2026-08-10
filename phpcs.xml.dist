@@ -31,6 +31,7 @@
 		</properties>
 		<!-- $_tests_dir mirrors the WP core PHPUnit bootstrap convention (see WordPress/two-factor tests/bootstrap.php); it is not a plugin global. -->
 		<exclude-pattern>tests/bootstrap.php</exclude-pattern>
+		<exclude-pattern>tests/bootstrap-no-dependency.php</exclude-pattern>
 	</rule>
 
 	<config name="testVersion" value="7.2-"/>
