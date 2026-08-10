@@ -653,13 +653,18 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	 * copy button's existence — as test_render_body_includes_a_copy_button_
 	 * when_codes_are_present() above does — would not catch a regression
 	 * here; this test inspects the actual payload value.
+	 *
+	 * The separator is "\r\n", matching codes_download_link()'s file output,
+	 * not a bare "\n" — see clipboard_payload()'s docblock for why an
+	 * LF-only payload pasted into a CRLF-only target is functionally the
+	 * same failure this test guards against.
 	 */
 	public function test_clipboard_payload_joins_codes_with_newlines_only() {
 		$codes = array( 'aaaa1111', 'bbbb2222', 'cccc3333' );
 
 		$payload = Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes );
 
-		$this->assertSame( "aaaa1111\nbbbb2222\ncccc3333", $payload );
+		$this->assertSame( "aaaa1111\r\nbbbb2222\r\ncccc3333", $payload );
 	}
 
 	/**
@@ -716,7 +721,7 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$payload      = json_decode( $decoded_json );
 
 		$this->assertSame( Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes ), $payload );
-		$this->assertSame( "aaaa1111\nbbbb2222\ncccc3333", $payload );
+		$this->assertSame( "aaaa1111\r\nbbbb2222\r\ncccc3333", $payload );
 		$this->assertNotSame( implode( '', $codes ), $payload );
 	}
 

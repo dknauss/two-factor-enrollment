@@ -490,6 +490,14 @@ class Two_Factor_Enrollment_Onboarding {
 	 * - One code per line is what a human pastes into a password manager
 	 *   note, a text file, or a printed sheet without editing first. Comma-
 	 *   or tab-separated would need cleaning up before it is usable.
+	 * - The line ending is "\r\n", matching codes_download_link()'s file
+	 *   output below, not a bare "\n". A paste target that only recognizes
+	 *   CRLF (a Windows-flavored text field being the common case) would
+	 *   otherwise render an LF-only payload as one run-together line —
+	 *   indistinguishable from the very concatenation bug this method exists
+	 *   to avoid, just introduced one layer down. Keeping both methods on
+	 *   the same line ending means there is exactly one behavior to reason
+	 *   about, not two that quietly disagree.
 	 * - No numbering. The "1." "2." prefixes in codes_download_link()'s file
 	 *   and in the on-screen list are visual aids for reading a list; in
 	 *   stored text they are noise, and they corrupt the value if someone
@@ -507,7 +515,7 @@ class Two_Factor_Enrollment_Onboarding {
 	 * @return string
 	 */
 	public static function clipboard_payload( $codes ) {
-		return implode( "\n", $codes );
+		return implode( "\r\n", $codes );
 	}
 
 	/**
@@ -834,7 +842,7 @@ class Two_Factor_Enrollment_Onboarding {
 						<?php
 						/*
 						 * The payload is built once, in PHP, by clipboard_payload() --
-						 * newline-separated codes and nothing else -- then carried to
+						 * codes separated by "\r\n" and nothing else -- then carried to
 						 * the click handler as JSON (wp_json_encode()) inside an
 						 * HTML attribute (esc_attr()). Double-escaped for its two
 						 * nested contexts: JSON for the JS string the click handler
