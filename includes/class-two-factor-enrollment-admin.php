@@ -19,6 +19,7 @@ class Two_Factor_Enrollment_Admin {
 	 */
 	public static function add_hooks() {
 		add_action( 'admin_notices', array( __CLASS__, 'notice' ) );
+		add_action( 'network_admin_notices', array( __CLASS__, 'network_notice' ) );
 	}
 
 	/**
@@ -76,6 +77,41 @@ class Two_Factor_Enrollment_Admin {
 
 		if ( self::should_warn() ) {
 			self::email_unavailable_notice();
+			return;
+		}
+
+		if ( self::no_policy_configured() ) {
+			self::no_policy_notice();
+		}
+	}
+
+	/**
+	 * Print the warning on Network Admin screens.
+	 *
+	 * This is deliberately not notice(). Of the two warnings, only the
+	 * no-policy one means anything on a network screen.
+	 *
+	 * has_filter() answers a question about the PHP process, so its answer
+	 * is the same on every site of the network and a network administrator
+	 * is exactly the person who can act on it — the policy filter for a
+	 * network-activated install lives in an mu-plugin they control.
+	 *
+	 * should_warn() is the opposite. It reaches Two_Factor_Core::get_providers()
+	 * through the per-site 'two_factor_providers' filter, and on
+	 * wp-admin/network/ the current site is the network's main site by
+	 * default rather than anything the administrator chose. Printing it here
+	 * would describe one site while appearing to describe the network:
+	 * silent on a network with Email disabled on every site but the main
+	 * one, and warning about the whole network when only the main site has
+	 * it off. Answering honestly would mean switch_to_blog() over every site
+	 * on the network on every network admin page load, which is not a cost
+	 * a notice gets to impose. So the per-site fact stays on the per-site
+	 * hook, where it is both accurate and actionable.
+	 *
+	 * @return void
+	 */
+	public static function network_notice() {
+		if ( ! current_user_can( 'manage_network_options' ) ) {
 			return;
 		}
 

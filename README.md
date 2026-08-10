@@ -242,6 +242,13 @@ down and shows an admin notice. Enrolling users into a non-Email provider
 requires configuration after login, which needs a session — see
 [WordPress/two-factor#934](https://github.com/WordPress/two-factor/issues/934).
 
+On a network, that particular notice appears only on each site's own dashboard,
+never in Network Admin. Email availability is a per-site fact, and the network
+dashboard has no current site to report it for — establishing the answer for a
+whole network would mean switching to every site on every page load. The
+"no policy registered" notice does appear in Network Admin, because
+`has_filter()` is true or false for the entire install.
+
 ## Compatibility with Require Email 2FA
 
 [Require Email 2FA](https://github.com/dknauss/Require-Email-2FA) solves the same

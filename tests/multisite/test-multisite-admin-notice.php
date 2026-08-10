@@ -10,19 +10,30 @@
 /**
  * What "behaving sensibly on a network" means here, and why:
  *
- * Two_Factor_Enrollment_Admin only hooks 'admin_notices', a per-site hook
- * that fires once for every site's own wp-admin page load. It does not hook
- * 'network_admin_notices', so a network-activated install with the Email
- * provider disabled everywhere, or no policy filter registered anywhere,
- * produces no warning at all on wp-admin/network/ -- only on each site's own
- * dashboard, and only for that site's own administrators. That is a real
- * property of the current code, not a bug this task is scoped to fix (per
- * the constraint against changing plugin behavior), so it is called out here
- * rather than silently assumed away: an admin who only ever visits the
- * network dashboard will never see this notice, network-activated or not.
+ * Two_Factor_Enrollment_Admin hooks two notice actions, and they deliberately
+ * do not carry the same payload.
  *
- * Given that starting point, "sensible" for the per-site notice that does
- * exist is the narrowest useful guarantee: it must reflect the site that is
+ * 'admin_notices' is per-site: it fires on each site's own wp-admin pages, for
+ * that site's own administrators, and both warnings are meaningful there.
+ *
+ * 'network_admin_notices' fires on wp-admin/network/, where there is no
+ * meaningful "current site" -- get_current_blog_id() reports the network's
+ * main site whatever the network administrator is actually there to manage.
+ * Only the no-policy warning survives that: has_filter() answers a question
+ * about the PHP process, so it is equally true on every site of the network.
+ * should_warn() does not -- it reaches Two_Factor_Core::get_providers()
+ * through the per-site 'two_factor_providers' filter, so on the network
+ * dashboard it would report the main site's Email availability while
+ * appearing to describe the network. A network of fifty sites with Email
+ * disabled on forty-nine of them would show nothing; disable it on the main
+ * site alone and every network screen would warn. Both readings are wrong,
+ * and answering the question honestly would mean iterating every site on the
+ * network on every network admin page load. So the network notice reports
+ * only what it can actually know, and the per-site notice keeps the per-site
+ * fact. The tests below pin down both halves of that split.
+ *
+ * For the per-site notice, "sensible" is the narrowest useful guarantee: it
+ * must reflect the site that is
  * actually current when admin_notices fires, and it must not leak a stale
  * answer from whatever site happened to be current earlier in the same PHP
  * process. Both should_warn() (-> Two_Factor_Core::get_providers(), via the
@@ -58,14 +69,25 @@ class Tests_Two_Factor_Enrollment_Multisite_Admin_Notice extends WP_UnitTestCase
 	 */
 	private static $admin_id;
 
+	/**
+	 * A network administrator, i.e. the only kind of user who can reach the
+	 * screens 'network_admin_notices' renders on.
+	 *
+	 * @var int
+	 */
+	private static $super_admin_id;
+
 	public static function wpSetUpBeforeClass( WP_UnitTest_Factory $factory ) {
 		self::$restricted_site_id = $factory->blog->create();
 		self::$admin_id           = $factory->user->create( array( 'role' => 'administrator' ) );
+		self::$super_admin_id     = $factory->user->create( array( 'role' => 'administrator' ) );
 
 		add_user_to_blog( self::$restricted_site_id, self::$admin_id, 'administrator' );
+		grant_super_admin( self::$super_admin_id );
 	}
 
 	public static function wpTearDownAfterClass() {
+		revoke_super_admin( self::$super_admin_id );
 		wp_delete_site( self::$restricted_site_id );
 	}
 
@@ -106,6 +128,24 @@ class Tests_Two_Factor_Enrollment_Multisite_Admin_Notice extends WP_UnitTestCase
 				if ( get_current_blog_id() === self::$restricted_site_id ) {
 					unset( $providers['Two_Factor_Email'] );
 				}
+
+				return $providers;
+			}
+		);
+	}
+
+	/**
+	 * Email disabled on every site of the network, which is what the
+	 * network notice must still decline to report -- not because the fact is
+	 * false, but because the network screen cannot establish it.
+	 *
+	 * @return void
+	 */
+	private function disable_email_everywhere() {
+		add_filter(
+			'two_factor_providers',
+			function ( $providers ) {
+				unset( $providers['Two_Factor_Email'] );
 
 				return $providers;
 			}
@@ -180,5 +220,120 @@ class Tests_Two_Factor_Enrollment_Multisite_Admin_Notice extends WP_UnitTestCase
 		$this->assertSame( '', $main_site_html );
 		$this->assertStringContainsString( 'notice-warning', $restricted_site_html );
 		$this->assertStringContainsString( 'not enforcing anything', $restricted_site_html );
+	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * The network admin notice.
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * Without this registration the whole feature is unreachable: a network
+	 * administrator who never leaves wp-admin/network/ sees no warning at
+	 * all, which is precisely the person most likely to network-activate the
+	 * plugin and then never register a policy filter.
+	 */
+	public function test_add_hooks_registers_the_network_admin_notice() {
+		Two_Factor_Enrollment_Admin::add_hooks();
+
+		$this->assertNotFalse(
+			has_action( 'network_admin_notices', array( 'Two_Factor_Enrollment_Admin', 'network_notice' ) )
+		);
+	}
+
+	/**
+	 * The case the notice exists for: plugin network-activated, nobody ever
+	 * wired up a policy, so it enrolls no one and says why.
+	 */
+	public function test_network_notice_warns_when_no_policy_registered() {
+		wp_set_current_user( self::$super_admin_id );
+
+		ob_start();
+		Two_Factor_Enrollment_Admin::network_notice();
+		$html = ob_get_clean();
+
+		$this->assertStringContainsString( 'notice-warning', $html );
+		$this->assertStringContainsString( 'not enrolling anyone', $html );
+	}
+
+	/**
+	 * A correctly configured network is silent.
+	 */
+	public function test_network_notice_silent_when_policy_registered() {
+		wp_set_current_user( self::$super_admin_id );
+
+		$this->register_policy_so_only_email_availability_varies();
+
+		ob_start();
+		Two_Factor_Enrollment_Admin::network_notice();
+		$html = ob_get_clean();
+
+		$this->assertSame( '', $html );
+	}
+
+	/**
+	 * The discriminating test for the split described in this file's header:
+	 * Email availability is a per-site fact and must not be reported from a
+	 * network screen, where the "current site" is an artifact of how network
+	 * admin loads rather than anything the administrator chose.
+	 *
+	 * Both conditions hold here -- Email disabled on the current site and no
+	 * policy registered -- which on the per-site notice suppresses the
+	 * no-policy warning in favour of the Email one. The network notice must
+	 * do the opposite: report the network-wide fact it can actually know,
+	 * and stay silent about the per-site one it cannot.
+	 *
+	 * Reusing notice() for this hook, the obvious one-line fix, fails here.
+	 */
+	public function test_network_notice_reports_no_policy_and_not_per_site_email_availability() {
+		wp_set_current_user( self::$super_admin_id );
+
+		$this->disable_email_everywhere();
+
+		$this->assertTrue( Two_Factor_Enrollment_Admin::should_warn(), 'Precondition: the per-site Email warning would fire here.' );
+
+		ob_start();
+		Two_Factor_Enrollment_Admin::network_notice();
+		$html = ob_get_clean();
+
+		$this->assertStringContainsString( 'not enrolling anyone', $html );
+		$this->assertStringNotContainsString( 'not enforcing anything', $html );
+	}
+
+	/**
+	 * A policy registered and Email disabled: still silent, because the only
+	 * thing this notice speaks to is configured.
+	 */
+	public function test_network_notice_silent_when_policy_registered_even_with_email_disabled() {
+		wp_set_current_user( self::$super_admin_id );
+
+		$this->register_policy_so_only_email_availability_varies();
+		$this->disable_email_everywhere();
+
+		ob_start();
+		Two_Factor_Enrollment_Admin::network_notice();
+		$html = ob_get_clean();
+
+		$this->assertSame( '', $html );
+	}
+
+	/**
+	 * Capability gate. A site administrator is not a network administrator:
+	 * they cannot reach wp-admin/network/ at all, and the notice tells them
+	 * to edit a filter they have no business editing. This also proves the
+	 * gate is consulted rather than the notice being unconditionally
+	 * printed by whatever renders it.
+	 */
+	public function test_network_notice_silent_for_a_site_administrator() {
+		wp_set_current_user( self::$admin_id );
+
+		$this->assertFalse( is_super_admin( self::$admin_id ), 'Precondition: this user must not be a super admin.' );
+
+		ob_start();
+		Two_Factor_Enrollment_Admin::network_notice();
+		$html = ob_get_clean();
+
+		$this->assertSame( '', $html );
 	}
 }
