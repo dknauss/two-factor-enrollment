@@ -42,6 +42,25 @@ class Two_Factor_Enrollment_Gate {
 	private static $injected = array();
 
 	/**
+	 * Whether filter_enabled_providers() is already on the call stack.
+	 *
+	 * The policy filters this gate consults are third-party code, and the most
+	 * natural way to write "require two-factor for users who don't have it" is
+	 * to call Two_Factor_Core::is_user_using_two_factor() or
+	 * get_enabled_providers_for_user() from the callback. Both re-enter
+	 * `two_factor_enabled_providers_for_user`, and therefore this method,
+	 * without bound — exhausting memory on a login request.
+	 *
+	 * A policy callback is entitled to ask Two Factor what it knows. Guarding
+	 * here means the inner call sees the user's stored providers, unmodified
+	 * by any injection this plugin might be about to make, which is the honest
+	 * answer to "does this user already have a second factor?"
+	 *
+	 * @var bool
+	 */
+	private static $running = false;
+
+	/**
 	 * Register hooks.
 	 *
 	 * @return void
@@ -63,11 +82,38 @@ class Two_Factor_Enrollment_Gate {
 	 * policy layer owns all counting, deadlines, and deferral state; this
 	 * plugin persists nothing about it and only honors the answer.
 	 *
+	 * Reentrant calls — a policy callback that consults Two Factor's own state
+	 * — return the providers untouched. See self::$running.
+	 *
 	 * @param array $providers Enabled provider keys.
 	 * @param int   $user_id   The user ID.
 	 * @return array
 	 */
 	public static function filter_enabled_providers( $providers, $user_id ) {
+		if ( self::$running ) {
+			return $providers;
+		}
+
+		self::$running = true;
+
+		try {
+			return self::resolve_enabled_providers( $providers, $user_id );
+		} finally {
+			// finally, not a trailing assignment: a policy callback that
+			// throws must not leave the gate permanently disarmed.
+			self::$running = false;
+		}
+	}
+
+	/**
+	 * The body of filter_enabled_providers(), run with the reentrancy guard
+	 * held.
+	 *
+	 * @param array $providers Enabled provider keys.
+	 * @param int   $user_id   The user ID.
+	 * @return array
+	 */
+	private static function resolve_enabled_providers( $providers, $user_id ) {
 		if ( ! is_array( $providers ) ) {
 			$providers = array();
 		}

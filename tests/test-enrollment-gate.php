@@ -340,6 +340,62 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The most natural way to write "require two-factor for users who don't
+	 * have it" is to ask Two Factor. That re-enters this plugin's own
+	 * two_factor_enabled_providers_for_user filter, and without a reentrancy
+	 * guard it recurses until the login request exhausts memory.
+	 *
+	 * The call count is the discriminating half: reaching the assertions at
+	 * all proves it terminated, and a count of exactly one proves the guard is
+	 * what stopped it rather than some incidental short-circuit.
+	 */
+	public function test_policy_filter_may_consult_two_factor_state_without_recursing() {
+		$calls = 0;
+
+		add_filter(
+			'two_factor_enrollment_required',
+			function ( $required, $user ) use ( &$calls ) {
+				++$calls;
+
+				return ! Two_Factor_Core::is_user_using_two_factor( $user->ID );
+			},
+			10,
+			2
+		);
+
+		$enabled = Two_Factor_Core::get_enabled_providers_for_user( $this->user_id );
+
+		$this->assertSame( 1, $calls );
+		$this->assertContains( 'Two_Factor_Email', $enabled );
+	}
+
+	/**
+	 * A policy callback that throws must not leave the guard latched, or every
+	 * later login on that request would silently skip enrollment.
+	 */
+	public function test_reentrancy_guard_is_released_when_a_policy_filter_throws() {
+		add_filter(
+			'two_factor_enrollment_required',
+			// phpcs:ignore WordPressVIPMinimum.Hooks.AlwaysReturnInFilter.MissingReturnStatement -- Throwing instead of returning is the whole point of this fixture.
+			function () {
+				throw new RuntimeException( 'policy exploded' );
+			}
+		);
+
+		try {
+			Two_Factor_Core::get_enabled_providers_for_user( $this->user_id );
+			$this->fail( 'Expected the policy filter to throw.' );
+		} catch ( RuntimeException $e ) {
+			$this->assertSame( 'policy exploded', $e->getMessage() );
+		}
+
+		remove_all_filters( 'two_factor_enrollment_required' );
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+
+		$this->assertContains( 'Two_Factor_Email', Two_Factor_Core::get_enabled_providers_for_user( $this->user_id ) );
+	}
+
+	/**
 	 * The hook registration itself. Without this action wired up nothing ever
 	 * makes an enrollment permanent, and deleting the add_action() line would
 	 * otherwise leave the entire suite green.

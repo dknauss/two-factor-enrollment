@@ -113,6 +113,19 @@ add_filter(
 | `two_factor_enrollment_deferrable` | `false` | May this user skip enrollment on this login |
 | `two_factor_enrollment_notify` | `true` | Send the enrollment notification email |
 
+### Your policy callback may call back into Two Factor
+
+`two_factor_enrollment_required` and `two_factor_enrollment_deferrable` both run
+from inside this plugin's `two_factor_enabled_providers_for_user` filter, so the
+obvious way to write "require two-factor for users who don't have it" —
+`! Two_Factor_Core::is_user_using_two_factor( $user )` — re-enters that same
+filter. That is supported: the injection is guarded against reentrancy, and the
+inner call returns the user's **stored** providers, unmodified by any injection
+this plugin is about to make. In other words your callback sees the honest
+answer to "does this user already have a second factor?", not a view of the
+world this plugin has already edited.
+
+
 ## Requirements
 
 WordPress 6.5+, PHP 7.2+, and the Two Factor plugin.
