@@ -48,9 +48,17 @@ jobs:
                 # does not run on the oldest PHP the plugin supports, so the
                 # 7.2 floor is exercised against a pinned older release — the
                 # same split the parent Two Factor plugin uses.
+                #
+                # `multisite: true` marks the one leg that also runs
+                # tests/multisite/. It is not part of any cross product either:
+                # network behavior does not depend on the PHP or WordPress
+                # version in a way the rest of this matrix is designed to
+                # catch, so running it once, on a current PHP against a
+                # current stable WordPress, is enough coverage without
+                # materially lengthening every other leg.
                 include:
                     - { php: '8.3', wp: 'trunk' }
-                    - { php: '8.3', wp: 'latest' }
+                    - { php: '8.3', wp: 'latest', multisite: true }
                     - { php: '8.1', wp: 'latest' }
                     - { php: '7.4', wp: 'latest' }
                     - { php: '7.2', wp: '6.9' }
@@ -91,9 +99,22 @@ jobs:
                 npm run composer install
 
             # Runs both suites: the main one, and the no-dependency suite that
-            # asserts the plugin no-ops when Two Factor is absent.
+            # asserts the plugin no-ops when Two Factor is absent. Deliberately
+            # not `npm test` (composer's aggregate "test" script), which also
+            # includes the multisite suite — that runs as its own step below,
+            # gated to a single matrix leg, so it does not triple the runtime
+            # of every other leg.
             - name: PHPUnit
-              run: npm test
+              run: npm run composer test:standard
+
+            # Network behavior (enrollment gate, onboarding marker, uninstall)
+            # verified against a real multisite install — see
+            # phpunit-multisite.xml.dist and tests/multisite/. Runs once, on
+            # this matrix's current-PHP/current-WordPress leg, rather than on
+            # every leg.
+            - name: PHPUnit (multisite)
+              if: ${{ matrix.multisite == true }}
+              run: npm run composer test:multisite
 
             - name: Environment logs on failure
               if: failure()
