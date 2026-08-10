@@ -79,6 +79,7 @@ class Two_Factor_Enrollment_Onboarding {
 	public static function add_hooks() {
 		add_filter( 'login_redirect', array( __CLASS__, 'filter_login_redirect' ), 20, 3 );
 		add_action( 'login_form_' . self::ACTION, array( __CLASS__, 'render' ) );
+		add_action( 'login_enqueue_scripts', array( __CLASS__, 'login_enqueue_scripts' ) );
 	}
 
 	/**
@@ -478,6 +479,244 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
+	 * Whether the current wp-login.php request is this screen's own action.
+	 *
+	 * login_enqueue_scripts fires from inside login_header(), before this
+	 * class's render() has run far enough to offer any other hook to key
+	 * off of, so this reads $_REQUEST['action'] directly -- the same source
+	 * wp-login.php itself resolves the $action global from. This is a
+	 * read-only comparison against a public query argument with no
+	 * state-changing effect of its own; it authorizes nothing the way the
+	 * one-time token in render() does, it only decides whether this
+	 * screen's CSS and JS are enqueued.
+	 *
+	 * @return bool
+	 */
+	private static function is_this_screen() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only comparison against the current login action; nothing here changes state.
+		$action = isset( $_REQUEST['action'] ) && is_string( $_REQUEST['action'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['action'] ) ) : '';
+
+		return self::ACTION === $action;
+	}
+
+	/**
+	 * Enqueue this screen's presentation assets.
+	 *
+	 * Scoped to this screen's own wp-login.php action via is_this_screen(),
+	 * so none of this reaches the ordinary login screen or the two-factor
+	 * challenge screen itself -- both share the same 'login' style handle
+	 * this hooks into.
+	 *
+	 * The 'login' style handle is already registered and enqueued by the
+	 * time login_enqueue_scripts fires (wp_enqueue_style( 'login' ) runs
+	 * earlier in login_header()), so wp_add_inline_style() can attach to it
+	 * directly without registering anything of its own.
+	 *
+	 * There is no equivalent shared script handle on the login page, so a
+	 * placeholder handle (no src) is registered here purely to carry the
+	 * inline script via wp_add_inline_script(); this does not add a script
+	 * asset file, and the plugin still ships none.
+	 *
+	 * @return void
+	 */
+	public static function login_enqueue_scripts() {
+		if ( ! self::is_this_screen() ) {
+			return;
+		}
+
+		wp_add_inline_style( 'login', self::inline_style() );
+
+		wp_register_script( 'two-factor-enrollment-onboarding', false, array(), TWO_FACTOR_ENROLLMENT_VERSION, true );
+		wp_enqueue_script( 'two-factor-enrollment-onboarding' );
+		wp_add_inline_script( 'two-factor-enrollment-onboarding', self::inline_script() );
+	}
+
+	/**
+	 * CSS for this screen, scoped entirely under its own body class so
+	 * nothing here can leak onto the ordinary login screen or the
+	 * two-factor challenge screen.
+	 *
+	 * This is a static string with no interpolated data of any kind, so
+	 * there is nothing here for esc_attr()/esc_html() to protect against --
+	 * the appropriate "escaping" for trusted, developer-authored CSS handed
+	 * to wp_add_inline_style() is exactly that: a constant string, never
+	 * built from request or user data.
+	 *
+	 * @return string
+	 */
+	private static function inline_style() {
+		return '
+			body.login-action-two_factor_enrollment_onboarding #login {
+				width: 100%;
+				max-width: 480px;
+				padding-top: 60px;
+			}
+
+			/* The WordPress.org logo above the login form is an off-site
+			 * link sitting directly above one-time recovery codes; following
+			 * it would abandon this screen and lose the codes for good. */
+			body.login-action-two_factor_enrollment_onboarding #login h1 {
+				display: none;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding {
+				background: #fff;
+				border: 1px solid #c3c4c7;
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+				padding: 32px 32px 24px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-section {
+				margin: 0 0 28px;
+				padding: 0 0 28px;
+				border-bottom: 1px solid #dcdcde;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-section:last-child {
+				margin-bottom: 0;
+				padding-bottom: 0;
+				border-bottom: none;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding h2,
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding h3 {
+				margin: 0 0 12px;
+				font-size: 20px;
+				line-height: 1.3;
+				font-weight: 600;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding h3 {
+				font-size: 16px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p {
+				margin: 0 0 16px;
+				font-size: 14px;
+				line-height: 1.6;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p:last-child {
+				margin-bottom: 0;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-credential-block {
+				background: #f6f7f7;
+				border: 1px solid #c3c4c7;
+				border-radius: 4px;
+				padding: 16px 20px 8px;
+				margin: 0 0 20px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes {
+				display: grid;
+				grid-template-columns: repeat(2, 1fr);
+				gap: 8px 20px;
+				margin: 0;
+				padding: 0;
+				list-style: none;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes li {
+				margin: 0 0 8px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes code {
+				display: block;
+				background: #fff;
+				border: 1px solid #dcdcde;
+				border-radius: 3px;
+				padding: 6px 10px;
+				font-family: Consolas, Monaco, monospace;
+				font-size: 15px;
+				letter-spacing: 0.03em;
+				color: #1d2327;
+				text-align: center;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-actions {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 8px;
+				margin: 0;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-actions .button-primary {
+				padding: 4px 20px;
+				height: auto;
+				line-height: 2;
+			}
+
+			@media (max-width: 380px) {
+				body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes {
+					grid-template-columns: 1fr;
+				}
+			}
+		';
+	}
+
+	/**
+	 * JS for this screen's click-to-copy affordance.
+	 *
+	 * navigator.clipboard is undefined outside a secure context (plain HTTP,
+	 * broadly), so the copy button ships `hidden` in the markup and this
+	 * only reveals it once the API is confirmed present -- a page with no
+	 * JavaScript, or JavaScript that finds no clipboard API, simply leaves
+	 * the button hidden rather than showing one that would silently do
+	 * nothing. The download link needs none of this and keeps working
+	 * either way.
+	 *
+	 * This is a static string with no interpolated data of any kind -- the
+	 * translated labels it reads live in the markup's data attributes,
+	 * already escaped there with esc_attr(), not built into this string.
+	 *
+	 * @return string
+	 */
+	private static function inline_script() {
+		return '
+			( function () {
+				if ( ! window.navigator || ! navigator.clipboard || ! navigator.clipboard.writeText ) {
+					return;
+				}
+
+				var button = document.querySelector( ".two-factor-enrollment-copy" );
+
+				if ( ! button ) {
+					return;
+				}
+
+				button.hidden = false;
+
+				button.addEventListener( "click", function () {
+					var codeNodes = document.querySelectorAll( ".two-factor-enrollment-codes code" );
+					var codes = Array.prototype.map.call( codeNodes, function ( node ) {
+						return node.textContent;
+					} ).join( "\\n" );
+
+					navigator.clipboard.writeText( codes ).then( function () {
+						var originalLabel = button.getAttribute( "data-default-label" );
+						var copiedLabel = button.getAttribute( "data-copied-label" );
+
+						button.textContent = copiedLabel;
+						button.disabled = true;
+
+						window.setTimeout( function () {
+							button.textContent = originalLabel;
+							button.disabled = false;
+						}, 2000 );
+					} ).catch( function () {
+						// The feature-detect above only confirms the API exists, not that
+						// a write will succeed (a permissions policy can still deny it).
+						// The download link is the real fallback; this only prevents an
+						// unhandled rejection from reaching the console.
+					} );
+				} );
+			} )();
+		';
+	}
+
+	/**
 	 * Build the onboarding screen markup.
 	 *
 	 * @param array  $codes       Freshly generated backup codes, or an empty
@@ -493,43 +732,57 @@ class Two_Factor_Enrollment_Onboarding {
 		ob_start();
 		?>
 		<div class="two-factor-enrollment-onboarding">
-			<h2><?php esc_html_e( 'Two-factor authentication is on', 'two-factor-enrollment' ); ?></h2>
-
-			<p>
-				<?php esc_html_e( 'From now on, signing in will send a one-time code to your email address.', 'two-factor-enrollment' ); ?>
-			</p>
-
-			<?php if ( ! empty( $codes ) ) : ?>
-				<h3><?php esc_html_e( 'Save your backup codes', 'two-factor-enrollment' ); ?></h3>
+			<section class="two-factor-enrollment-section">
+				<h2><?php esc_html_e( 'Two-factor authentication is on', 'two-factor-enrollment' ); ?></h2>
 
 				<p>
-					<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — these codes will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
+					<?php esc_html_e( 'From now on, signing in will send a one-time code to your email address.', 'two-factor-enrollment' ); ?>
 				</p>
+			</section>
 
-				<ul class="two-factor-enrollment-codes">
-					<?php foreach ( $codes as $code ) : ?>
-						<li><code><?php echo esc_html( $code ); ?></code></li>
-					<?php endforeach; ?>
-				</ul>
+			<?php if ( ! empty( $codes ) ) : ?>
+				<section class="two-factor-enrollment-section">
+					<h3><?php esc_html_e( 'Save your backup codes', 'two-factor-enrollment' ); ?></h3>
 
-				<p class="two-factor-enrollment-download">
-					<a href="<?php echo esc_url( self::codes_download_link( $codes ), array( 'data' ) ); ?>" download="two-factor-backup-codes.txt">
-						<?php esc_html_e( 'Download codes', 'two-factor-enrollment' ); ?>
-					</a>
-				</p>
+					<p>
+						<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — these codes will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
+					</p>
+
+					<div class="two-factor-enrollment-credential-block">
+						<ul class="two-factor-enrollment-codes">
+							<?php foreach ( $codes as $code ) : ?>
+								<li><code><?php echo esc_html( $code ); ?></code></li>
+							<?php endforeach; ?>
+						</ul>
+					</div>
+
+					<p class="two-factor-enrollment-actions">
+						<a class="button button-primary two-factor-enrollment-download" href="<?php echo esc_url( self::codes_download_link( $codes ), array( 'data' ) ); ?>" download="two-factor-backup-codes.txt">
+							<?php esc_html_e( 'Download codes', 'two-factor-enrollment' ); ?>
+						</a>
+						<button type="button" class="button two-factor-enrollment-copy" hidden aria-live="polite"
+							data-default-label="<?php echo esc_attr__( 'Copy codes', 'two-factor-enrollment' ); ?>"
+							data-copied-label="<?php echo esc_attr__( 'Copied!', 'two-factor-enrollment' ); ?>"
+						>
+							<?php esc_html_e( 'Copy codes', 'two-factor-enrollment' ); ?>
+						</button>
+					</p>
+				</section>
 			<?php endif; ?>
 
-			<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
+			<section class="two-factor-enrollment-section">
+				<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
 
-			<p>
-				<?php esc_html_e( 'An authenticator app generates codes instantly, with no waiting for email. You can set one up any time from your profile.', 'two-factor-enrollment' ); ?>
-			</p>
+				<p>
+					<?php esc_html_e( 'An authenticator app generates codes instantly, with no waiting for email. You can set one up any time from your profile.', 'two-factor-enrollment' ); ?>
+				</p>
 
-			<p>
-				<a href="<?php echo esc_url( $profile_url ); ?>">
-					<?php esc_html_e( 'Set up an authenticator app', 'two-factor-enrollment' ); ?>
-				</a>
-			</p>
+				<p>
+					<a href="<?php echo esc_url( $profile_url ); ?>">
+						<?php esc_html_e( 'Set up an authenticator app', 'two-factor-enrollment' ); ?>
+					</a>
+				</p>
+			</section>
 
 			<p class="two-factor-enrollment-continue">
 				<a class="button button-primary" href="<?php echo esc_url( $redirect_to ); ?>">

@@ -14,13 +14,18 @@
 
 	<!--
 	These six WordPressVIPMinimum.JS.* sniffs cannot fire against this codebase:
-	`extensions="php"` above means PHPCS never opens a JS or CSS file, and this
-	plugin ships no JS and no CSS by design (no build step, no runtime JS/CSS
-	dependencies — the single screen it renders is server-side HTML). VIPCS
-	still emits a "listening for JS" deprecation notice for each one at ruleset
-	load time regardless, which is noise, not a finding. If this plugin ever
-	adds JS or CSS assets, remove this exclusion and let these sniffs run for
-	real.
+	`extensions="php"` above means PHPCS only ever opens .php files, so the JS
+	tokenizer these sniffs depend on never runs. This plugin ships one small
+	inline script and one inline stylesheet for its onboarding screen (via
+	wp_add_inline_script()/wp_add_inline_style(), both PHP string literals
+	with no interpolated data, delivered from a single conditional hook —
+	see Two_Factor_Enrollment_Onboarding::login_enqueue_scripts()) rather
+	than separate .js/.css asset files, so there is still no .js file for
+	these sniffs to open and no build step. VIPCS still emits a "listening
+	for JS" deprecation notice for each one at ruleset load time regardless,
+	which is noise, not a finding. If this plugin ever ships a standalone
+	.js or .css asset file, remove this exclusion and let these sniffs run
+	for real.
 	-->
 	<rule ref="WordPress-VIP-Go">
 		<exclude name="WordPressVIPMinimum.JS.Window"/>
