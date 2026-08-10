@@ -634,7 +634,7 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
 
 		$this->assertStringContainsString( '<button type="button" class="button two-factor-enrollment-copy" hidden', $html );
-		$this->assertStringContainsString( 'data-default-label="Copy codes"', $html );
+		$this->assertStringContainsString( 'data-default-label="Copy"', $html );
 		$this->assertStringContainsString( 'data-copied-label="Copied!"', $html );
 		$this->assertStringNotContainsString( 'aria-live', $html );
 	}
@@ -1597,7 +1597,7 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
 
 		$this->assertStringContainsString( 'Want something faster?', $html );
-		$this->assertStringContainsString( 'two-factor-enrollment-method', $html );
+		$this->assertStringContainsString( 'two-factor-enrollment-method-totp', $html );
 	}
 
 	/**
@@ -1621,7 +1621,12 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'Want something faster?', $html );
 		$this->assertStringNotContainsString( 'Authenticator app', $html );
 		$this->assertStringNotContainsString( 'Not set up', $html );
-		$this->assertStringNotContainsString( 'two-factor-enrollment-method', $html );
+		$this->assertStringNotContainsString( 'two-factor-enrollment-method-totp', $html );
+
+		// The Email row is a different method row and must survive: it
+		// describes the factor the user just enrolled in, which has nothing
+		// to do with whether TOTP is on offer.
+		$this->assertStringContainsString( 'two-factor-enrollment-method-email', $html );
 	}
 
 	/**
@@ -1646,6 +1651,94 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Save your backup codes', $html );
 		$this->assertStringContainsString( 'two-factor-enrollment-continue-button', $html );
 		$this->assertStringContainsString( 'two-factor-enrollment-acknowledge-input', $html );
+	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * Button labels, and the enrolled method row.
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * "Download codes" and "Copy codes" sat directly beneath a boxed list of
+	 * codes, under a heading that already said "Save your backup codes" —
+	 * three repetitions of the word in a few inches. The buttons are
+	 * adjacent to their object in both reading order and the DOM, so the
+	 * object does not need restating.
+	 *
+	 * Deliberately no aria-label restoring the longer name. The copy button
+	 * swaps its visible text to "Copied!" and "Couldn't copy", and a fixed
+	 * accessible name of "Copy codes" would then fail to contain the visible
+	 * label — the thing WCAG 2.5.3 (Label in Name) actually tests, and what
+	 * voice-control users speak. A transient mismatch is worse than the
+	 * shorter name.
+	 */
+	public function test_render_body_button_labels_do_not_restate_their_object() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$this->assertStringNotContainsString( 'Download codes', $html );
+		$this->assertStringNotContainsString( 'Copy codes', $html );
+		$this->assertStringContainsString( 'data-default-label="Copy"', $html );
+
+		// No aria-label anywhere on the actions, per the docblock above.
+		$this->assertStringNotContainsString( 'aria-label', $html );
+	}
+
+	/**
+	 * The screen states what the user now has, not only what they could add.
+	 * The enrolled factor gets the same method-row treatment as the upgrade
+	 * offer — icon, name, state chip — which is what earns the icons their
+	 * place: both do the same job. An icon on the heading alone would be
+	 * decoration.
+	 */
+	public function test_render_body_shows_the_enrolled_email_method_as_active() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringContainsString( 'two-factor-enrollment-method-email', $html );
+		$this->assertStringContainsString( '>Email<', $html );
+		$this->assertStringContainsString( 'Active', $html );
+	}
+
+	/**
+	 * Order matters: what you have, then what you could add. The Email row
+	 * belongs in the opening confirmation section, above the codes, and the
+	 * authenticator offer stays at the bottom.
+	 */
+	public function test_render_body_orders_the_method_rows_have_then_could_add() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$email = strpos( $html, 'two-factor-enrollment-method-email' );
+		$codes = strpos( $html, 'two-factor-enrollment-codes' );
+		$totp  = strpos( $html, 'two-factor-enrollment-method-totp' );
+
+		$this->assertNotFalse( $email, 'The Email method row was not found.' );
+		$this->assertNotFalse( $totp, 'The authenticator method row was not found.' );
+
+		$this->assertLessThan( $codes, $email, 'The enrolled factor belongs above the codes it just produced.' );
+		$this->assertLessThan( $totp, $codes, 'The optional upgrade belongs last.' );
+	}
+
+	/**
+	 * Two chips, two states, and they must not look alike. "Active" and
+	 * "Not set up" are distinguished by their text first — colour is only
+	 * ever supplementary — but a state chip that renders identically for
+	 * both states is not doing the job the chip exists for.
+	 */
+	public function test_login_enqueue_scripts_styles_the_active_badge_distinctly() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding \.two-factor-enrollment-badge-active\s*\{/',
+			$style,
+			'The active state needs its own rule, or both chips render identically.'
+		);
 	}
 
 	/**

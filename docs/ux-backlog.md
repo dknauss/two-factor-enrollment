@@ -1,9 +1,14 @@
 # Onboarding screen — UX backlog
 
-Patterns worth borrowing from the LearnDash two-factor onboarding screen cited as
-the design reference in
+Patterns worth borrowing from the two-factor onboarding screen cited as the
+design reference in
 [WordPress/two-factor#813](https://github.com/WordPress/two-factor/issues/813),
 adapted to a screen that solves a different problem.
+
+That screen is **Solid Security's**, not LearnDash's. The screenshot in #813 was
+taken on learndash.com, which runs the plugin;
+[Timothy Jacobs, who built it, said so in the thread](https://github.com/WordPress/two-factor/issues/813).
+This file called it the LearnDash screen throughout until that was noticed.
 
 Their screen is **pre-enrollment**: it asks the user to pick a method. Ours is
 **post-enrollment**: the user has already passed a real challenge, and the screen
@@ -116,30 +121,62 @@ reassurance on the screen.
 
 ---
 
-## Still open
+## 6. Both factors as method rows — shipped
 
-**The upgrade offer does not check whether TOTP is available site-wide.** Found
-while doing item 2, pre-existing, not fixed. If `Two_Factor_Totp` is removed via
-the `two_factor_providers` filter, the "Want something faster?" section still
-renders and still links to the profile screen, where the user will find nothing
-to set up. The status chip makes this slightly more pointed than it was — the
-offer now asserts a state for a method that is not on offer at all.
+The screen states what the user now has, not only what they could add. The
+enrolled factor carries the same row as the upgrade offer — icon, name, state
+chip:
 
-`Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes()` already does
-exactly this check for Backup Codes and returns early when the provider is
-disabled site-wide; the same shape applies here. Left out of the item 2 commit
-because it is a behavior change rather than a presentation one, and worth its own
-review.
+> ✉ **Email** · Active
+> 📱 **Authenticator app** · Not set up
+
+That symmetry is what earns the icons their place: both label a component rather
+than decorating a heading. An icon on the `<h2>` alone would have been the
+latter.
+
+Two rows with states is **not** the method list ruled out below. Nothing here is
+selectable, both statements are simply true, and the required path that must
+never offer a choice is upstream of this screen — the challenge has already been
+passed by the time it renders.
+
+The Email row is unconditional; the authenticator row is not (see "Still open",
+now closed, and the site-wide availability check in `totp_available()`).
+
+---
+
+## 7. Button labels — shipped
+
+"Download codes" and "Copy codes" became "Download" and "Copy". They sit directly
+beneath the boxed list they act on, under a heading already reading "Save your
+backup codes" — three repetitions of the word in a few inches.
+
+No `aria-label` restoring the longer name. The copy button swaps its visible text
+to "Copied!" and "Couldn't copy", and a fixed accessible name of "Copy codes"
+would then not contain the visible label, which is what WCAG 2.5.3 (Label in
+Name) tests and what voice-control users speak. A transient mismatch is worse
+than the shorter name.
+
+---
+
+## Closed since
+
+**The upgrade offer now checks whether TOTP is available site-wide.** Found while
+doing item 2. If `Two_Factor_Totp` is removed via the `two_factor_providers`
+filter, the "Want something faster?" section used to render anyway and link to a
+profile screen with nothing on it — worse once the chip landed, since the screen
+then asserted a state for a method that was not on offer.
+`totp_available()` now mirrors the check `maybe_generate_backup_codes()` already
+made for Backup Codes.
 
 ---
 
 ## Deliberately not taken
 
-**The method chooser.** LearnDash presents Mobile App / Email / Backup Codes as a
-menu. Adopting that on a forced-enrollment screen would undo this plugin's central
-security property: an attacker holding only the password could pick TOTP, enroll
-their own authenticator, and never need the victim's mailbox. The required path
-offers exactly one factor for exactly that reason. Every option added to a
+**The method chooser.** Solid Security presents Mobile App / Email / Backup Codes
+as a menu. Adopting that on a forced-enrollment screen would undo this plugin's
+central security property: an attacker holding only the password could pick TOTP,
+enroll their own authenticator, and never need the victim's mailbox. The required
+path offers exactly one factor for exactly that reason. Every option added to a
 forced-enrollment chooser is a route around the mailbox requirement.
 
 **A visible "Skip".** Deferral here is a policy decision made in the gate before
@@ -154,7 +191,10 @@ the equivalent list would be misleading.
 
 ## Upstream
 
-The chooser argument is worth making on #813 itself, where this screenshot is
-cited as the design target. "Adopt the affordances, not the chooser, and here is
-the attack that motivates it" is a substantive contribution to that thread, and
-one nobody there has made yet.
+The chooser argument **has been made** on #813 — "adopt the affordances, not the
+chooser, and here is the attack that motivates it" — alongside the earlier
+comment on the enrollment race and email-first enrollment. What remains open in
+that thread is Timothy Jacobs's suggestion of a login-interstitial framework for
+enforcing requirements at login: worth answering with the finding that
+email-first enrollment needs no interstitial, because it completes inside core's
+existing challenge before any auth cookie is issued.

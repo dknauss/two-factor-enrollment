@@ -808,6 +808,16 @@ class Two_Factor_Enrollment_Onboarding {
 				white-space: nowrap;
 			}
 
+			/* The two chips carry different states and must not render
+			 * alike. The text is what distinguishes them -- "Active" against
+			 * "Not set up" -- and this colour is supplementary to that, never
+			 * the only signal. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-badge-active {
+				background: #edfaef;
+				border-color: #a7d7ae;
+				color: #005c12;
+			}
+
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-credential-block {
 				background: #f6f7f7;
 				border: 1px solid #c3c4c7;
@@ -1092,6 +1102,37 @@ class Two_Factor_Enrollment_Onboarding {
 			<section class="two-factor-enrollment-section">
 				<h2><?php esc_html_e( 'Two-factor authentication is on', 'two-factor-enrollment' ); ?></h2>
 
+				<?php
+				/*
+				 * The enrolled factor, in the same method-row shape as the
+				 * upgrade offer below: icon, name, state chip. That symmetry
+				 * is what earns the icons their place — both label a
+				 * component rather than decorating a heading — and it lets
+				 * the screen say what the user has before what they could
+				 * add.
+				 *
+				 * Unconditional, unlike the authenticator row. Email is the
+				 * only factor this plugin enrolls anyone in, and a user who
+				 * reached this screen passed an emailed challenge moments
+				 * ago in the same request chain, so there is no state in
+				 * which this row would be describing something untrue.
+				 *
+				 * Two rows with states is not the method list the design
+				 * rules out. Nothing here is selectable: this screen renders
+				 * after the challenge has already been passed, and the
+				 * required path that must never offer a choice is upstream
+				 * of it. See docs/ux-backlog.md, "Deliberately not taken".
+				 */
+				?>
+				<p class="two-factor-enrollment-method two-factor-enrollment-method-email">
+					<svg class="two-factor-enrollment-method-icon" width="18" height="18" viewBox="0 0 20 20" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+						<rect x="2.75" y="4.75" width="14.5" height="10.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/>
+						<path d="M3.5 6.75 10 11.25l6.5-4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+					</svg>
+					<strong class="two-factor-enrollment-method-name"><?php esc_html_e( 'Email', 'two-factor-enrollment' ); ?></strong>
+					<span class="two-factor-enrollment-badge two-factor-enrollment-badge-active"><?php esc_html_e( 'Active', 'two-factor-enrollment' ); ?></span>
+				</p>
+
 				<p>
 					<?php esc_html_e( 'From now on, signing in will send a one-time code to your email address.', 'two-factor-enrollment' ); ?>
 				</p>
@@ -1121,7 +1162,7 @@ class Two_Factor_Enrollment_Onboarding {
 					 */
 					?>
 					<p>
-						<?php esc_html_e( 'Save these somewhere safe now. If you ever lose access to your email, they are the only way back into your account, and each code works once only.', 'two-factor-enrollment' ); ?>
+						<?php esc_html_e( 'Save these somewhere safe now. If you ever lose access to your email, they are the only way back into your account, and each code works once, and once only.', 'two-factor-enrollment' ); ?>
 					</p>
 
 					<p class="two-factor-enrollment-caveat">
@@ -1137,8 +1178,26 @@ class Two_Factor_Enrollment_Onboarding {
 					</div>
 
 					<p class="two-factor-enrollment-actions">
+						<?php
+						/*
+						 * "Download" and "Copy", not "Download codes" and
+						 * "Copy codes". These sit directly beneath the boxed
+						 * list they act on, under a heading that already
+						 * reads "Save your backup codes"; restating the
+						 * object put the word three times in a few inches.
+						 *
+						 * No aria-label restoring the longer name, either.
+						 * The copy button swaps its visible text to
+						 * "Copied!" and "Couldn't copy", and a fixed
+						 * accessible name of "Copy codes" would then not
+						 * contain the visible label — which is what WCAG
+						 * 2.5.3 (Label in Name) tests and what voice control
+						 * users speak. A transient mismatch would be worse
+						 * than the shorter name.
+						 */
+						?>
 						<a class="button button-primary two-factor-enrollment-download" href="<?php echo esc_url( self::codes_download_link( $codes ), array( 'data' ) ); ?>" download="two-factor-backup-codes.txt">
-							<?php esc_html_e( 'Download codes', 'two-factor-enrollment' ); ?>
+							<?php esc_html_e( 'Download', 'two-factor-enrollment' ); ?>
 						</a>
 						<?php
 						/*
@@ -1172,14 +1231,14 @@ class Two_Factor_Enrollment_Onboarding {
 						}
 						?>
 						<button type="button" class="button two-factor-enrollment-copy" hidden
-							data-default-label="<?php echo esc_attr__( 'Copy codes', 'two-factor-enrollment' ); ?>"
+							data-default-label="<?php echo esc_attr__( 'Copy', 'two-factor-enrollment' ); ?>"
 							data-copied-label="<?php echo esc_attr__( 'Copied!', 'two-factor-enrollment' ); ?>"
 							data-copied-status="<?php echo esc_attr__( 'Codes copied to the clipboard.', 'two-factor-enrollment' ); ?>"
 							data-failed-label="<?php echo esc_attr__( "Couldn't copy", 'two-factor-enrollment' ); ?>"
 							data-failed-status="<?php echo esc_attr__( "Couldn't copy the codes automatically. Use the download button instead.", 'two-factor-enrollment' ); ?>"
 							data-codes-payload="<?php echo esc_attr( $codes_payload_json ); ?>"
 						>
-							<?php esc_html_e( 'Copy codes', 'two-factor-enrollment' ); ?>
+							<?php esc_html_e( 'Copy', 'two-factor-enrollment' ); ?>
 						</button>
 						<span class="two-factor-enrollment-copy-status screen-reader-text" role="status"></span>
 					</p>
@@ -1200,7 +1259,7 @@ class Two_Factor_Enrollment_Onboarding {
 				 * never enrolls through this plugin and never arrives here.
 				 */
 				?>
-				<p class="two-factor-enrollment-method">
+				<p class="two-factor-enrollment-method two-factor-enrollment-method-totp">
 					<?php
 					/*
 					 * Inline SVG rather than dashicons: the login screen
