@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<ruleset name="Two Factor Enrollment">
+	<description>Coding standards for the Two Factor Enrollment plugin.</description>
+
+	<file>.</file>
+	<exclude-pattern>/vendor/*</exclude-pattern>
+	<exclude-pattern>/node_modules/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+
+	<rule ref="WordPress-Extra"/>
+
+	<!--
+	These six WordPressVIPMinimum.JS.* sniffs cannot fire against this codebase:
+	`extensions="php"` above means PHPCS never opens a JS or CSS file, and this
+	plugin ships no JS and no CSS by design (no build step, no runtime JS/CSS
+	dependencies — the single screen it renders is server-side HTML). VIPCS
+	still emits a "listening for JS" deprecation notice for each one at ruleset
+	load time regardless, which is noise, not a finding. If this plugin ever
+	adds JS or CSS assets, remove this exclusion and let these sniffs run for
+	real.
+	-->
+	<rule ref="WordPress-VIP-Go">
+		<exclude name="WordPressVIPMinimum.JS.Window"/>
+		<exclude name="WordPressVIPMinimum.JS.DangerouslySetInnerHTML"/>
+		<exclude name="WordPressVIPMinimum.JS.InnerHTML"/>
+		<exclude name="WordPressVIPMinimum.JS.StrippingTags"/>
+		<exclude name="WordPressVIPMinimum.JS.StringConcat"/>
+		<exclude name="WordPressVIPMinimum.JS.HTMLExecutingFunctions"/>
+	</rule>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="two-factor-enrollment"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="two_factor_enrollment"/>
+				<element value="Two_Factor_Enrollment"/>
+				<element value="TWO_FACTOR_ENROLLMENT"/>
+			</property>
+		</properties>
+		<!-- $_tests_dir mirrors the WP core PHPUnit bootstrap convention (see WordPress/two-factor tests/bootstrap.php); it is not a plugin global. -->
+		<exclude-pattern>tests/bootstrap.php</exclude-pattern>
+		<exclude-pattern>tests/bootstrap-no-dependency.php</exclude-pattern>
+	</rule>
+
+	<config name="testVersion" value="7.2-"/>
+	<rule ref="PHPCompatibilityWP"/>
+</ruleset>

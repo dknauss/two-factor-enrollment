@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<phpunit
+	bootstrap="tests/bootstrap.php"
+	backupGlobals="false"
+	colors="true"
+	cacheResultFile="./tests/.phpunit.result.cache"
+	>
+	<testsuites>
+		<testsuite name="All Tests">
+			<directory suffix=".php">tests</directory>
+			<exclude>tests/bootstrap-no-dependency.php</exclude>
+			<exclude>tests/no-dependency</exclude>
+		</testsuite>
+	</testsuites>
+</phpunit>

@@ -1,0 +1,14 @@
+{
+	"name": "two-factor-enrollment",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"env": "wp-env",
+		"composer": "wp-env run tests-cli --env-cwd=wp-content/plugins/two-factor-enrollment composer --",
+		"test": "npm run composer test",
+		"lint": "npm run composer lint"
+	},
+	"devDependencies": {
+		"@wordpress/env": "^10.0.0"
+	}
+}
