@@ -169,6 +169,18 @@ class Two_Factor_Enrollment_Gate {
 
 			update_user_meta( $user->ID, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, Two_Factor_Enrollment_Onboarding::STATE_PENDING );
 
+			/*
+			 * Best effort: the return value is deliberately discarded. A
+			 * bounced or misconfigured mailer must not fail an enrollment the
+			 * user has already completed.
+			 *
+			 * The mail does not claim to have ended the account's other
+			 * sessions, because nothing here does. Ending them at this point
+			 * is not possible either: $_COOKIE has not been updated with the
+			 * token wp_set_auth_cookie() just issued, so
+			 * wp_destroy_other_sessions() would no-op and destroy_all() would
+			 * kill the session this very request created.
+			 */
 			Two_Factor_Enrollment_Notify::notify( $user, $provider->get_label() );
 		}
 
