@@ -144,12 +144,153 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
-	 * Render the onboarding screen.
-	 *
-	 * Implemented in Task 7.
+	 * Render the onboarding screen and exit.
 	 *
 	 * @return void
 	 */
 	public static function render() {
+		if ( ! is_user_logged_in() ) {
+			wp_safe_redirect( wp_login_url() );
+			exit;
+		}
+
+		$user = wp_get_current_user();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only destination, validated below and by wp_safe_redirect().
+		$redirect_to = isset( $_REQUEST['redirect_to'] ) ? esc_url_raw( wp_unslash( $_REQUEST['redirect_to'] ) ) : admin_url();
+		$redirect_to = wp_validate_redirect( $redirect_to, admin_url() );
+
+		if ( ! self::needs_onboarding( $user ) ) {
+			wp_safe_redirect( $redirect_to );
+			exit;
+		}
+
+		$codes = self::maybe_generate_backup_codes( $user );
+
+		self::mark_onboarded( $user->ID );
+
+		login_header( __( 'Two-Factor Authentication', 'two-factor-enrollment' ) );
+
+		echo self::render_body( $user, $codes, $redirect_to ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped within render_body().
+
+		login_footer();
+
+		exit;
+	}
+
+	/**
+	 * Generate backup codes for a user who has none, and make them a usable
+	 * login method.
+	 *
+	 * Two_Factor_Backup_Codes::generate_codes() by itself is not sufficient
+	 * for this screen's purpose, for two reasons:
+	 *
+	 * 1. It only writes the code hashes to BACKUP_CODES_META_KEY. It never
+	 *    adds Two_Factor_Backup_Codes to ENABLED_PROVIDERS_USER_META_KEY, and
+	 *    Two_Factor_Core::get_available_providers_for_user() only offers
+	 *    providers that are both enabled and configured. Skipping the enable
+	 *    step would show the user real-looking codes that silently do
+	 *    nothing at login — the worst outcome for a recovery path.
+	 * 2. Called without 'method' => 'append', it *replaces* any codes the
+	 *    user already has, invalidating them. This method only ever
+	 *    generates when the user currently has zero codes, and still passes
+	 *    'append' as a second line of defense.
+	 *
+	 * Enabling never disturbs the rest of the enabled-providers list or the
+	 * primary provider, which must stay Email.
+	 *
+	 * @param WP_User $user The user to generate codes for.
+	 * @return string[] Freshly generated (unhashed) codes, or an empty array
+	 *                   if Backup Codes is unavailable or the user already
+	 *                   has codes.
+	 */
+	public static function maybe_generate_backup_codes( $user ) {
+		if ( ! class_exists( 'Two_Factor_Backup_Codes' ) ) {
+			return array();
+		}
+
+		$providers = Two_Factor_Core::get_providers();
+
+		if ( ! isset( $providers['Two_Factor_Backup_Codes'] ) ) {
+			return array();
+		}
+
+		if ( 0 !== Two_Factor_Backup_Codes::codes_remaining_for_user( $user ) ) {
+			return array();
+		}
+
+		$codes = Two_Factor_Backup_Codes::get_instance()->generate_codes( $user, array( 'method' => 'append' ) );
+
+		$enabled = get_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true );
+
+		if ( ! is_array( $enabled ) ) {
+			$enabled = array();
+		}
+
+		if ( ! in_array( 'Two_Factor_Backup_Codes', $enabled, true ) ) {
+			$enabled[] = 'Two_Factor_Backup_Codes';
+			update_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array_values( $enabled ) );
+		}
+
+		return $codes;
+	}
+
+	/**
+	 * Build the onboarding screen markup.
+	 *
+	 * @param WP_User $user        The enrolled user.
+	 * @param array   $codes       Freshly generated backup codes, or an empty
+	 *                             array to omit that section (Backup Codes
+	 *                             disabled site-wide, or the user already
+	 *                             has codes).
+	 * @param string  $redirect_to Where the Continue link points.
+	 * @return string
+	 */
+	public static function render_body( $user, $codes, $redirect_to ) {
+		$profile_url = admin_url( 'profile.php#two-factor-options' );
+
+		ob_start();
+		?>
+		<div class="two-factor-enrollment-onboarding">
+			<h2><?php esc_html_e( 'Two-factor authentication is on', 'two-factor-enrollment' ); ?></h2>
+
+			<p>
+				<?php esc_html_e( 'From now on, signing in will send a one-time code to your email address.', 'two-factor-enrollment' ); ?>
+			</p>
+
+			<?php if ( ! empty( $codes ) ) : ?>
+				<h3><?php esc_html_e( 'Save your backup codes', 'two-factor-enrollment' ); ?></h3>
+
+				<p>
+					<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — they will not be shown again.', 'two-factor-enrollment' ); ?>
+				</p>
+
+				<ul class="two-factor-enrollment-codes">
+					<?php foreach ( $codes as $code ) : ?>
+						<li><code><?php echo esc_html( $code ); ?></code></li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
+
+			<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
+
+			<p>
+				<?php esc_html_e( 'An authenticator app generates codes instantly, with no waiting for email. You can set one up any time from your profile.', 'two-factor-enrollment' ); ?>
+			</p>
+
+			<p>
+				<a href="<?php echo esc_url( $profile_url ); ?>">
+					<?php esc_html_e( 'Set up an authenticator app', 'two-factor-enrollment' ); ?>
+				</a>
+			</p>
+
+			<p class="two-factor-enrollment-continue">
+				<a class="button button-primary" href="<?php echo esc_url( $redirect_to ); ?>">
+					<?php esc_html_e( 'Continue', 'two-factor-enrollment' ); ?>
+				</a>
+			</p>
+		</div>
+		<?php
+		return (string) ob_get_clean();
 	}
 }

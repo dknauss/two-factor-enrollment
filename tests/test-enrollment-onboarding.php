@@ -16,7 +16,20 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 	public function tear_down() {
 		remove_all_filters( 'two_factor_enrollment_required' );
+		remove_all_filters( 'two_factor_providers' );
 		parent::tear_down();
+	}
+
+	/**
+	 * two_factor_providers filter callback that removes Backup Codes,
+	 * simulating an administrator disabling the provider site-wide.
+	 *
+	 * @param array $providers Registered providers, keyed by class name.
+	 * @return array
+	 */
+	public function remove_backup_codes_provider( $providers ) {
+		unset( $providers['Two_Factor_Backup_Codes'] );
+		return $providers;
 	}
 
 	public function test_needs_onboarding_false_without_two_factor() {
@@ -113,5 +126,124 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 	public function test_login_form_action_is_registered() {
 		$this->assertNotFalse( has_action( 'login_form_two_factor_enrollment_onboarding' ) );
+	}
+
+	public function test_render_body_lists_backup_codes() {
+		$user  = get_user_by( 'id', $this->user_id );
+		$codes = array( 'aaaa1111', 'bbbb2222' );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( $user, $codes, admin_url() );
+
+		$this->assertStringContainsString( 'aaaa1111', $html );
+		$this->assertStringContainsString( 'bbbb2222', $html );
+	}
+
+	public function test_render_body_offers_totp_upgrade() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( $user, array(), admin_url() );
+
+		$this->assertStringContainsString( 'profile.php', $html );
+	}
+
+	public function test_render_body_includes_continue_link_to_redirect_target() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( $user, array(), 'https://example.org/wp-admin/edit.php' );
+
+		$this->assertStringContainsString( 'https://example.org/wp-admin/edit.php', $html );
+	}
+
+	public function test_render_body_escapes_codes() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( $user, array( '<script>x</script>' ), admin_url() );
+
+		$this->assertStringNotContainsString( '<script>x</script>', $html );
+	}
+
+	/**
+	 * This is the assertion that proves the recovery path actually works:
+	 * codes generated on the onboarding screen must make Backup Codes an
+	 * available login method, not just a screen full of text. The brief's
+	 * approach (calling generate_codes() alone) writes only the code hashes
+	 * and would fail this — Two_Factor_Core::get_available_providers_for_user()
+	 * intersects enabled providers with configured ones, and a provider that
+	 * is never enabled is never offered at login.
+	 */
+	public function test_maybe_generate_backup_codes_makes_provider_available_at_login() {
+		update_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array( 'Two_Factor_Email' ) );
+		update_user_meta( $this->user_id, Two_Factor_Core::PROVIDER_USER_META_KEY, 'Two_Factor_Email' );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		$codes = Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes( $user );
+
+		$this->assertNotEmpty( $codes );
+
+		$available = Two_Factor_Core::get_available_providers_for_user( $user );
+
+		$this->assertArrayHasKey( 'Two_Factor_Backup_Codes', $available );
+	}
+
+	/**
+	 * A user who already has backup codes must keep them: generating new
+	 * ones on every visit to this screen would silently invalidate codes
+	 * the user may have already saved.
+	 */
+	public function test_maybe_generate_backup_codes_does_not_regenerate_existing_codes() {
+		$existing = array( 'existing-hash-one', 'existing-hash-two' );
+		update_user_meta( $this->user_id, '_two_factor_backup_codes', $existing );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		$codes = Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes( $user );
+
+		$this->assertSame( array(), $codes );
+		$this->assertSame( $existing, get_user_meta( $this->user_id, '_two_factor_backup_codes', true ) );
+	}
+
+	/**
+	 * Enabling Backup Codes must append to the existing enabled-providers
+	 * list and must never touch the primary provider, which stays Email.
+	 */
+	public function test_maybe_generate_backup_codes_appends_without_disturbing_existing_state() {
+		update_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array( 'Two_Factor_Email' ) );
+		update_user_meta( $this->user_id, Two_Factor_Core::PROVIDER_USER_META_KEY, 'Two_Factor_Email' );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes( $user );
+
+		$enabled = get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true );
+
+		$this->assertSame( array( 'Two_Factor_Email', 'Two_Factor_Backup_Codes' ), $enabled );
+		$this->assertSame( 'Two_Factor_Email', get_user_meta( $this->user_id, Two_Factor_Core::PROVIDER_USER_META_KEY, true ) );
+	}
+
+	/**
+	 * If an administrator has disabled Backup Codes site-wide, the screen
+	 * must not offer codes that cannot exist.
+	 */
+	public function test_maybe_generate_backup_codes_skipped_when_provider_disabled() {
+		add_filter( 'two_factor_providers', array( $this, 'remove_backup_codes_provider' ) );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		$codes = Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes( $user );
+
+		$this->assertSame( array(), $codes );
+		$this->assertSame( '', get_user_meta( $this->user_id, '_two_factor_backup_codes', true ) );
+	}
+
+	public function test_render_body_omits_backup_codes_section_when_provider_disabled() {
+		add_filter( 'two_factor_providers', array( $this, 'remove_backup_codes_provider' ) );
+
+		$user  = get_user_by( 'id', $this->user_id );
+		$codes = Two_Factor_Enrollment_Onboarding::maybe_generate_backup_codes( $user );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( $user, $codes, admin_url() );
+
+		$this->assertStringNotContainsString( 'Save your backup codes', $html );
 	}
 }
