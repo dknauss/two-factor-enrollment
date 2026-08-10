@@ -19,10 +19,11 @@ Enrollment is only made permanent — written to the user's enabled providers �
 once they actually pass the emailed challenge. If a covered user never logs in
 after this plugin is installed, or if it's deactivated first, nothing is written
 and no trace is left. Once enrollment does complete, an account-change
-notification is emailed (see `two_factor_enrollment_notify` below), and the
-user is shown a one-time onboarding screen after their next login, where backup
-codes are generated and enabled for them and they're offered a link to set up
-an authenticator app.
+notification is emailed (see `two_factor_enrollment_notify` below), and —
+still within that same login, right after they enter the emailed code and
+before they ever reach the dashboard — they're redirected to a one-time
+onboarding screen, where backup codes are generated and enabled for them and
+they're offered a link to set up an authenticator app.
 
 A user who is both required and marked deferrable is skipped entirely on that
 login — Email is not injected, and they proceed normally. This plugin stores
@@ -49,15 +50,20 @@ Codes provider site-wide, this section is skipped.
 
 ## Security
 
-Enrollment completing inside the login challenge, before any auth cookie
-exists, is the property this whole design rests on:
+The property this design rests on is where the auth cookie sits in the login
+sequence: `Two_Factor_Core` validates the emailed code first and only calls
+`wp_set_auth_cookie()` after that succeeds — never on the strength of the
+password alone. (The permanent record of enrollment — appending Email to the
+user's enabled providers — is written a moment later in that same request,
+once the code has already been proven; it plays no part in gating the
+cookie.)
 
 - No password-only session is ever created for a covered user. There is
   nothing to lock down between "password verified" and "second factor set up,"
-  because that window doesn't exist — the auth cookie simply isn't issued
-  until the emailed code is entered.
+  because that window doesn't exist — the auth cookie is never issued until
+  the emailed code is entered and validated.
 - This closes the **enrollment race**: an attacker who has obtained only a
-  user's password cannot complete enrollment, because they cannot receive the
+  user's password cannot pass that validation, because they cannot receive the
   emailed one-time code. Passwords alone stop being sufficient to take over an
   account, including one that had no second factor configured yet.
 - The required path deliberately offers **no provider chooser**. If a user
