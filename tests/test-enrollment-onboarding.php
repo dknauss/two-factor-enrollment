@@ -329,6 +329,82 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The direct simulation of two concurrent requests carrying the same
+	 * valid token: a double-click, or the same link open in two tabs. Both
+	 * would pass render()'s hash_equals() check before either has written
+	 * anything, so the claim itself is what has to arbitrate between them.
+	 * Calling it twice in sequence with the same token *is* that race,
+	 * collapsed onto one thread — the first call is the winning request, the
+	 * second is the one that arrives just after and must lose.
+	 */
+	public function test_claim_onboarding_succeeds_once_and_fails_on_replay() {
+		$token = $this->seed_pending_enrollment();
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		$first  = Two_Factor_Enrollment_Onboarding::claim_onboarding( $user, $token );
+		$second = Two_Factor_Enrollment_Onboarding::claim_onboarding( $user, $token );
+
+		$this->assertTrue( $first, 'The first request to claim the screen must win.' );
+		$this->assertFalse( $second, 'A second claim with the same token must lose once the first has landed.' );
+	}
+
+	public function test_claim_onboarding_leaves_the_marker_exactly_done() {
+		$token = $this->seed_pending_enrollment();
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Onboarding::claim_onboarding( $user, $token );
+
+		$this->assertSame(
+			'done',
+			get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true )
+		);
+	}
+
+	/**
+	 * A claim with the wrong token must not match the compare-and-swap's
+	 * expected previous value, so it fails and the marker is left exactly as
+	 * it was — still pending, still carrying the original token, ready for a
+	 * request that actually has it.
+	 */
+	public function test_claim_onboarding_fails_with_wrong_token_and_leaves_marker_untouched() {
+		$token = $this->seed_pending_enrollment();
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		$result = Two_Factor_Enrollment_Onboarding::claim_onboarding( $user, strrev( $token ) );
+
+		$this->assertFalse( $result );
+		$this->assertSame(
+			'pending:' . $token,
+			get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true )
+		);
+	}
+
+	/**
+	 * A claim against a marker that has already moved to 'done' — the state
+	 * a losing concurrent request, or a stale link clicked after the screen
+	 * was already shown, would find — must fail rather than silently
+	 * succeeding a second time.
+	 */
+	public function test_claim_onboarding_fails_when_marker_already_done() {
+		$token = $this->seed_pending_enrollment();
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Onboarding::mark_onboarded( $this->user_id );
+
+		$result = Two_Factor_Enrollment_Onboarding::claim_onboarding( $user, $token );
+
+		$this->assertFalse( $result );
+		$this->assertSame(
+			'done',
+			get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true )
+		);
+	}
+
+	/**
 	 * This screen is the lockout-recovery path. Codes the user cannot save are
 	 * codes the user will not have, so the download link is load-bearing — and
 	 * it has to be the JS-free data: URI, because this plugin ships no scripts

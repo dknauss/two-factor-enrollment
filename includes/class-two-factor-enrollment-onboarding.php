@@ -168,6 +168,69 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
+	 * Atomically claim the onboarding screen for this request.
+	 *
+	 * Two concurrent requests can carry the same valid token — a double-click,
+	 * or the same link open in two tabs — and both would pass the caller's
+	 * hash_equals() check before either write lands. Without a compare-and-swap
+	 * here, both requests would generate a fresh set of ten backup codes and
+	 * both would enable the provider; the second write wins, and the *other*
+	 * tab displays codes that were never stored. For a recovery path, that is
+	 * the worst available outcome: the user saves codes that silently do not
+	 * work, and only finds out while locked out.
+	 *
+	 * update_user_meta()'s optional $prev_value argument turns the write into
+	 * a real compare-and-swap at the database level: the row is only updated
+	 * if its current value still matches $prev_value. The first request to
+	 * call this swaps 'pending:TOKEN' for 'done' and wins the claim; a
+	 * concurrent second request finds the row no longer matches (the first
+	 * request already changed it) and gets false back.
+	 *
+	 * Caller contract: this must run after the token has already been
+	 * verified with hash_equals() against pending_token(), and before any
+	 * codes are generated or anything is rendered. A false return means
+	 * another request already claimed the screen; the caller must redirect
+	 * to the validated destination without generating codes or rendering.
+	 *
+	 * That ordering — claim before render — has a real cost: if the request
+	 * dies between the claim landing and the browser receiving the page, the
+	 * user never sees their codes, and the screen does not come back (the
+	 * marker is already 'done'). That trade is intentional. The codes were
+	 * still generated and Two_Factor_Backup_Codes is still enabled regardless
+	 * of whether the page renders, the user holds a valid session at this
+	 * point, and render_body()'s own copy already tells them they can
+	 * generate a fresh set from their profile at any time. So this failure
+	 * mode is an inconvenience — reload the profile page instead of this
+	 * one-time screen — whereas the race it replaces could hand someone codes
+	 * that do not work, discovered only once they are locked out. Do not
+	 * "fix" this back to claiming after render; that reintroduces the race
+	 * this method exists to close.
+	 *
+	 * Note on update_user_meta()'s return value: it returns false both when
+	 * no row matched $prev_value and when the stored value already equals
+	 * $meta_value. Those two cases are indistinguishable from the return
+	 * value alone. They cannot collide for this specific call, because the
+	 * swap always moves 'pending:TOKEN' to 'done' — two different strings —
+	 * so a false here always means "no matching row", never "already equal".
+	 * A future caller reusing this pattern for a same-to-same swap would not
+	 * get that guarantee and must not rely on this method's return value
+	 * meaning the same thing.
+	 *
+	 * @param WP_User $user  The user attempting to claim the screen.
+	 * @param string  $token The token already verified against pending_token().
+	 * @return bool True if this request won the claim, false if another
+	 *              request already claimed it first.
+	 */
+	public static function claim_onboarding( $user, $token ) {
+		return (bool) update_user_meta(
+			$user->ID,
+			self::ONBOARDED_META_KEY,
+			self::STATE_DONE,
+			self::STATE_PENDING . ':' . $token
+		);
+	}
+
+	/**
 	 * Build the onboarding screen URL, carrying the user's one-time token.
 	 *
 	 * Two_Factor_Core::login_url() already runs urlencode_deep() over every
@@ -234,6 +297,12 @@ class Two_Factor_Enrollment_Onboarding {
 	 * time is therefore built from an empty session token and verified against
 	 * the real one on the next request: it fails every time.
 	 *
+	 * The token check alone is not enough to make this single-request-safe:
+	 * two requests carrying the same valid token (double-click, two tabs) can
+	 * both pass hash_equals() before either has written anything. The claim
+	 * below closes that race; see claim_onboarding()'s docblock for the full
+	 * reasoning and the trade-off it accepts.
+	 *
 	 * @return void
 	 */
 	public static function render() {
@@ -266,6 +335,22 @@ class Two_Factor_Enrollment_Onboarding {
 			exit;
 		}
 
+		/*
+		 * Claim the screen before doing anything else. Two requests carrying
+		 * the same valid token (double-click, the same link open in two tabs)
+		 * can both reach this point before either has written anything; the
+		 * claim is a compare-and-swap against the database, so only one of
+		 * them can win it. A losing request has already been out-raced by a
+		 * winner that will generate and display the real codes, so it is sent
+		 * on to the destination with nothing generated here. See
+		 * claim_onboarding()'s docblock for why claiming here, before
+		 * generating codes or rendering, is the correct trade-off.
+		 */
+		if ( ! self::claim_onboarding( $user, $supplied ) ) {
+			wp_safe_redirect( $redirect_to );
+			exit;
+		}
+
 		$codes = self::maybe_generate_backup_codes( $user );
 
 		login_header( __( 'Two-Factor Authentication', 'two-factor-enrollment' ) );
@@ -273,14 +358,6 @@ class Two_Factor_Enrollment_Onboarding {
 		echo self::render_body( $codes, $redirect_to ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped within render_body().
 
 		login_footer();
-
-		/*
-		 * Marked last, deliberately. These are the user's only recovery codes;
-		 * a failure or a dropped connection between marking and rendering
-		 * would burn the one-time screen with the codes generated but never
-		 * displayed, leaving the user with credentials they have never seen.
-		 */
-		self::mark_onboarded( $user->ID );
 
 		exit;
 	}
