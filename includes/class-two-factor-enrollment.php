@@ -28,8 +28,10 @@ class Two_Factor_Enrollment {
 	public static function add_hooks() {
 		require_once TWO_FACTOR_ENROLLMENT_DIR . 'includes/class-two-factor-enrollment-gate.php';
 		require_once TWO_FACTOR_ENROLLMENT_DIR . 'includes/class-two-factor-enrollment-notify.php';
+		require_once TWO_FACTOR_ENROLLMENT_DIR . 'includes/class-two-factor-enrollment-onboarding.php';
 
 		Two_Factor_Enrollment_Gate::add_hooks();
+		Two_Factor_Enrollment_Onboarding::add_hooks();
 	}
 
 	/**

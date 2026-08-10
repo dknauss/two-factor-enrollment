@@ -149,6 +149,33 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 		$this->assertSame( 'editor@example.org', $sent->to[0][0] );
 	}
 
+	public function test_persist_enrollment_marks_onboarding_pending_on_new_enrollment() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$this->assertSame(
+			'pending',
+			get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true )
+		);
+	}
+
+	public function test_persist_enrollment_does_not_reset_onboarding_after_it_is_done() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		Two_Factor_Enrollment_Onboarding::mark_onboarded( $this->user_id );
+
+		// A second call must not re-append Email or resurrect the 'pending' marker.
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$this->assertSame(
+			'done',
+			get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true )
+		);
+	}
+
 	public function test_persist_enrollment_does_not_resend_notification_mail() {
 		$user = get_user_by( 'id', $this->user_id );
 
