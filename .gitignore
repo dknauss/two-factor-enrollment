@@ -2,3 +2,4 @@
 /node_modules/
 /tests/.phpunit.result.cache
 /tests/.phpunit-no-dependency.result.cache
+/tests/.phpunit-multisite.result.cache

@@ -10,6 +10,7 @@
 			<directory suffix=".php">tests</directory>
 			<exclude>tests/bootstrap-no-dependency.php</exclude>
 			<exclude>tests/no-dependency</exclude>
+			<exclude>tests/multisite</exclude>
 		</testsuite>
 	</testsuites>
 </phpunit>

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<phpunit
+	bootstrap="tests/bootstrap.php"
+	backupGlobals="false"
+	colors="true"
+	cacheResultFile="./tests/.phpunit-multisite.result.cache"
+	>
+	<!--
+	Defining WP_TESTS_MULTISITE here, before tests/bootstrap.php hands off to
+	the WordPress test library's own includes/bootstrap.php, is what switches
+	the shared install routine, and therefore this entire run, into
+	multisite mode:
+
+		$multisite = ( '1' === getenv( 'WP_MULTISITE' ) );
+		$multisite = $multisite || ( defined( 'WP_TESTS_MULTISITE' ) && WP_TESTS_MULTISITE );
+
+	This mirrors the const element named WP_TESTS_MULTISITE that WordPress
+	core itself sets, the same way, in its own tests/phpunit/multisite.xml.
+	Every file in tests/multisite/ depends on this having actually taken
+	effect: tests/multisite/test-bootstrap-multisite.php asserts
+	is_multisite() directly, so a misconfiguration here (or this file being
+	edited back toward phpunit.xml.dist) fails loudly instead of silently
+	re-running the single-site suite a second time.
+	-->
+	<php>
+		<const name="WP_TESTS_MULTISITE" value="1" />
+	</php>
+	<testsuites>
+		<testsuite name="Multisite Tests">
+			<directory suffix=".php">tests/multisite</directory>
+		</testsuite>
+	</testsuites>
+</phpunit>

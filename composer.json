@@ -29,8 +29,14 @@
 		"lint": "phpcs",
 		"test": [
 			"phpunit",
+			"phpunit -c phpunit-no-dependency.xml.dist",
+			"phpunit -c phpunit-multisite.xml.dist"
+		],
+		"test:standard": [
+			"phpunit",
 			"phpunit -c phpunit-no-dependency.xml.dist"
 		],
+		"test:multisite": "phpunit -c phpunit-multisite.xml.dist",
 		"format": "phpcbf"
 	}
 }
