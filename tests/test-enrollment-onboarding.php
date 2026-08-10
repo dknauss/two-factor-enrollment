@@ -791,8 +791,23 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	 * covers plenty of real WordPress installs on plain HTTP), and must
 	 * reveal the copy button only once that check passes — it ships hidden
 	 * in the markup for exactly this reason.
+	 *
+	 * That is only half the guarantee. The `hidden` attribute on its own
+	 * does not hide the button: wp-includes/css/buttons.css sets
+	 * `.wp-core-ui .button { display: inline-block }`, an author-origin
+	 * declaration that beats the `[hidden]` UA-stylesheet default, and
+	 * login_header() puts `wp-core-ui` on `<body>`. Asserting only the JS
+	 * *source text* (as this test previously did in full) would stay green
+	 * even if the CSS half of the fix were missing or reverted — the exact
+	 * shape of the Critical finding this pair of assertions exists to catch.
+	 * So this also inspects the emitted CSS itself and confirms it actually
+	 * computes to `display: none` for a hidden button, not just that the
+	 * script intends to unhide one.
 	 */
 	public function test_login_enqueue_scripts_ships_the_copy_button_hidden_by_default() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
 		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
 
 		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
@@ -801,6 +816,14 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'navigator.clipboard', $script );
 		$this->assertStringContainsString( 'button.hidden = false', $script );
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/\.two-factor-enrollment-copy\[hidden\]\s*\{[^}]*display:\s*none/',
+			$style,
+			'The emitted CSS must actually hide the [hidden] copy button, not just carry a script that intends to reveal it.'
+		);
 	}
 
 	/**

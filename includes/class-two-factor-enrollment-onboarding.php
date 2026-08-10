@@ -588,6 +588,21 @@ class Two_Factor_Enrollment_Onboarding {
 				display: none;
 			}
 
+			/* wp-includes/css/buttons.css sets `.wp-core-ui .button` to
+			 * `display: inline-block`, and login_header() puts wp-core-ui on
+			 * <body>. That author-origin declaration beats the [hidden]
+			 * attribute UA-stylesheet default of display:none, so the copy
+			 * button below -- which starts hidden until inline_script()
+			 * confirms navigator.clipboard is available -- would otherwise
+			 * render as a full, non-functional button on any page where the
+			 * script never runs (plain HTTP, JS disabled, a strict CSP). The
+			 * specificity of this rule, (0,3,1), beats the (0,2,0) of
+			 * .wp-core-ui .button, so it wins regardless of stylesheet
+			 * order. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-copy[hidden] {
+				display: none;
+			}
+
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding {
 				background: #fff;
 				border: 1px solid #c3c4c7;
