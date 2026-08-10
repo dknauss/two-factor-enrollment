@@ -1,0 +1,94 @@
+name: Test
+
+on: [push, pull_request]
+
+# Cancel superseded runs for the same branch or PR.
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+    cancel-in-progress: true
+
+# No permissions by default; each job asks for what it needs.
+permissions: {}
+
+jobs:
+    lint:
+        name: Lint PHP and check PHP compatibility
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        permissions:
+            contents: read
+        steps:
+            - name: Checkout
+              uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+            - name: Setup PHP and Composer
+              uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+              with:
+                php-version: '8.3'
+
+            - name: Install Composer dependencies
+              run: composer install --no-interaction --prefer-dist
+
+            # phpcs.xml.dist layers WordPress-Extra, WordPress-VIP-Go and
+            # PHPCompatibilityWP with testVersion 7.2-, so this one command covers
+            # both coding standards and the PHP floor.
+            - name: PHPCS
+              run: composer lint
+
+    test:
+        name: PHP ${{ matrix.php }} / WP ${{ matrix.wp }}
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        permissions:
+            contents: read
+        strategy:
+            fail-fast: false
+            matrix:
+                php: [ '8.3', '8.1', '7.4', '7.2' ]
+                wp: [ latest ]
+                include:
+                    # One run against WordPress trunk to catch core changes early.
+                    - php: '8.3'
+                      wp: trunk
+
+        env:
+            WP_ENV_PHP_VERSION: ${{ matrix.php }}
+            WP_ENV_CORE: ${{ matrix.wp == 'trunk' && 'WordPress/WordPress' || '' }}
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+            - name: Setup Node
+              uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+              with:
+                node-version: '20'
+                cache: 'npm'
+
+            - name: Install NPM dependencies
+              run: npm install
+
+            # wp-env pulls WordPress and the Two Factor plugin from the network,
+            # which is the flakiest step in this workflow, so retry it.
+            - name: Start the Docker environment
+              uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
+              with:
+                timeout_minutes: 10
+                max_attempts: 3
+                command: npm run env start
+
+            # Install inside the container so the lock resolves against the
+            # matrix PHP version rather than the runner's.
+            - name: Composer install
+              run: |
+                rm -f composer.lock
+                npm run composer install
+
+            # Runs both suites: the main one, and the no-dependency suite that
+            # asserts the plugin no-ops when Two Factor is absent.
+            - name: PHPUnit
+              run: npm test
+
+            - name: Environment logs on failure
+              if: failure()
+              run: npm run env logs all -- --no-watch || true
