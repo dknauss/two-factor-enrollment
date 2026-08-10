@@ -32,6 +32,11 @@ class Two_Factor_Enrollment_Gate {
 	 * user has actually passed the challenge, so deactivating this plugin
 	 * before a covered user has ever logged in leaves no trace.
 	 *
+	 * A user who is required but also deferrable is treated as out of scope
+	 * for this login: Email is not injected, and they log in normally. The
+	 * policy layer owns all counting, deadlines, and deferral state; this
+	 * plugin persists nothing about it and only honors the answer.
+	 *
 	 * @param array $providers Enabled provider keys.
 	 * @param int   $user_id   The user ID.
 	 * @return array
@@ -50,6 +55,10 @@ class Two_Factor_Enrollment_Gate {
 		}
 
 		if ( ! Two_Factor_Enrollment::is_required( $user_id ) ) {
+			return $providers;
+		}
+
+		if ( Two_Factor_Enrollment::is_deferrable( $user_id ) ) {
 			return $providers;
 		}
 

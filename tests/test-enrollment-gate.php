@@ -22,6 +22,7 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 
 	public function tear_down() {
 		remove_all_filters( 'two_factor_enrollment_required' );
+		remove_all_filters( 'two_factor_enrollment_deferrable' );
 		remove_all_filters( 'two_factor_providers' );
 		remove_all_filters( 'two_factor_enrollment_notify' );
 		reset_phpmailer_instance();
@@ -38,6 +39,52 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 		$enabled = Two_Factor_Core::get_enabled_providers_for_user( $this->user_id );
 
 		$this->assertContains( 'Two_Factor_Email', $enabled );
+	}
+
+	public function test_no_injection_when_required_and_deferrable() {
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+		add_filter( 'two_factor_enrollment_deferrable', '__return_true' );
+
+		$enabled = Two_Factor_Core::get_enabled_providers_for_user( $this->user_id );
+
+		$this->assertNotContains( 'Two_Factor_Email', $enabled );
+	}
+
+	public function test_user_not_using_two_factor_when_required_and_deferrable() {
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+		add_filter( 'two_factor_enrollment_deferrable', '__return_true' );
+
+		$this->assertFalse( Two_Factor_Core::is_user_using_two_factor( $this->user_id ) );
+	}
+
+	public function test_email_injected_when_required_and_not_deferrable() {
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+		add_filter( 'two_factor_enrollment_deferrable', '__return_false' );
+
+		$enabled = Two_Factor_Core::get_enabled_providers_for_user( $this->user_id );
+
+		$this->assertContains( 'Two_Factor_Email', $enabled );
+	}
+
+	public function test_deferrable_alone_has_no_effect_when_not_required() {
+		add_filter( 'two_factor_enrollment_deferrable', '__return_true' );
+
+		$enabled = Two_Factor_Core::get_enabled_providers_for_user( $this->user_id );
+
+		$this->assertNotContains( 'Two_Factor_Email', $enabled );
+	}
+
+	public function test_persist_enrollment_unaffected_by_deferrable_filter() {
+		add_filter( 'two_factor_enrollment_deferrable', '__return_true' );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$this->assertSame(
+			array( 'Two_Factor_Email' ),
+			get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true )
+		);
 	}
 
 	public function test_email_becomes_primary_when_required() {
