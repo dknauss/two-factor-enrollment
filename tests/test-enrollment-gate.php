@@ -519,6 +519,47 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The policy layer is given no other way to know that a user it was
+	 * counting deferrals for has finished enrolling.
+	 */
+	public function test_enrolled_action_fires_once_per_account() {
+		$this->inject_via_gate();
+
+		$fired = array();
+
+		add_action(
+			'two_factor_enrollment_enrolled',
+			function ( $user, $provider ) use ( &$fired ) {
+				$fired[] = array( $user->ID, $provider->get_key() );
+			},
+			10,
+			2
+		);
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$this->assertSame( array( array( $this->user_id, 'Two_Factor_Email' ) ), $fired );
+	}
+
+	public function test_enrolled_action_does_not_fire_without_policy() {
+		$fired = 0;
+
+		add_action(
+			'two_factor_enrollment_enrolled',
+			function () use ( &$fired ) {
+				++$fired;
+			}
+		);
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( get_user_by( 'id', $this->user_id ), Two_Factor_Email::get_instance() );
+
+		$this->assertSame( 0, $fired );
+	}
+
+	/**
 	 * The hook registration itself. Without this action wired up nothing ever
 	 * makes an enrollment permanent, and deleting the add_action() line would
 	 * otherwise leave the entire suite green.

@@ -5,6 +5,8 @@
  * @package Two_Factor_Enrollment
  */
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Offers backup codes and the TOTP upgrade after a user's first two-factored login.
  *

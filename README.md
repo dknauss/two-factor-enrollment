@@ -19,11 +19,18 @@ Enrollment is only made permanent — written to the user's enabled providers �
 once they actually pass the emailed challenge. If a covered user never logs in
 after this plugin is installed, or if it's deactivated first, nothing is written
 and no trace is left. Once enrollment does complete, an account-change
-notification is emailed (see `two_factor_enrollment_notify` below), and —
-still within that same login, right after they enter the emailed code and
-before they ever reach the dashboard — they're redirected to a one-time
-onboarding screen, where backup codes are generated and enabled for them and
-they're offered a link to set up an authenticator app.
+notification is emailed (see `two_factor_enrollment_notify` below), and they're
+redirected to a one-time onboarding screen, where backup codes are generated
+and enabled for them and they're offered a link to set up an authenticator
+app.
+
+In the ordinary case that redirect happens within the same login, right after
+they enter the emailed code and before they reach the dashboard. It is driven
+by the `login_redirect` filter, so it does not happen on an **interim login**
+— the small re-authentication modal WordPress shows when a session expires
+mid-edit. Two Factor returns before `login_redirect` on that path. The user
+stays enrolled either way; they simply meet the onboarding screen at their
+next full login instead.
 
 A user who is both required and marked deferrable is skipped entirely on that
 login — Email is not injected, and they proceed normally. This plugin stores
@@ -81,7 +88,11 @@ cookie.)
 - This closes the **enrollment race**: an attacker who has obtained only a
   user's password cannot pass that validation, because they cannot receive the
   emailed one-time code. Passwords alone stop being sufficient to take over an
-  account, including one that had no second factor configured yet.
+  account through the login form, including an account that had no second
+  factor configured yet. That qualifier matters: this covers interactive
+  logins only, and an **application password** remains sufficient on its own
+  for the REST and XML-RPC surface — Two Factor governs those separately, via
+  `two_factor_user_api_login_enable`.
 - The required path deliberately offers **no provider chooser**. If a user
   could pick a method other than Email, an attacker could try to steer
   enrollment toward a factor that doesn't depend on the mailbox. Removing the
@@ -128,6 +139,26 @@ add_filter(
 | `two_factor_enrollment_required` | `false` | Does this user have to enroll |
 | `two_factor_enrollment_deferrable` | `false` | May this user skip enrollment on this login |
 | `two_factor_enrollment_notify` | `true` | Send the enrollment notification email |
+
+There is also one action:
+
+| Action | Arguments | Fires |
+|---|---|---|
+| `two_factor_enrollment_enrolled` | `WP_User $user`, `Two_Factor_Provider $provider` | Once, when this plugin has permanently enrolled a user |
+
+Deferral counting and deadlines belong to the policy layer, and this plugin
+persists none of that state — so `two_factor_enrollment_enrolled` is how the
+policy layer learns it can stop counting. It fires only for a genuinely new
+enrollment, never on a repeat login.
+
+```php
+add_action(
+	'two_factor_enrollment_enrolled',
+	function ( $user ) {
+		delete_user_meta( $user->ID, 'my_plugin_enrollment_deferrals' );
+	}
+);
+```
 
 ### Your policy callback may call back into Two Factor
 

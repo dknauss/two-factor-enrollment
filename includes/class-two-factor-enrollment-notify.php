@@ -5,6 +5,8 @@
  * @package Two_Factor_Enrollment
  */
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Enrollment notification mail.
  *

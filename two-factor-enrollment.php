@@ -15,6 +15,8 @@
  * @package Two_Factor_Enrollment
  */
 
+defined( 'ABSPATH' ) || exit;
+
 define( 'TWO_FACTOR_ENROLLMENT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TWO_FACTOR_ENROLLMENT_VERSION', '0.1.0' );
 

@@ -5,6 +5,8 @@
  * @package Two_Factor_Enrollment
  */
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Remove all data this plugin created.
  *

@@ -5,6 +5,8 @@
  * @package Two_Factor_Enrollment
  */
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Warns administrators when enrollment cannot run.
  */
@@ -34,11 +36,18 @@ class Two_Factor_Enrollment_Admin {
 	 * @return void
 	 */
 	public static function notice() {
-		if ( ! self::should_warn() ) {
+		/*
+		 * Capability first. should_warn() reaches
+		 * Two_Factor_Core::get_providers(), which instantiates every
+		 * registered provider, and this runs on every admin page load for
+		 * every user. Only administrators can act on the notice, so nobody
+		 * else should pay for deciding whether to show it.
+		 */
+		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
 
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! self::should_warn() ) {
 			return;
 		}
 

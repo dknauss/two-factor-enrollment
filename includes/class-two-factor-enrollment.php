@@ -5,6 +5,8 @@
  * @package Two_Factor_Enrollment
  */
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Decides whether a user must enroll in two-factor authentication.
  *

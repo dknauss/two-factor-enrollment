@@ -5,6 +5,8 @@
  * @package Two_Factor_Enrollment
  */
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Pre-cookie enrollment gate.
  *
@@ -234,6 +236,20 @@ class Two_Factor_Enrollment_Gate {
 			 * kill the session this very request created.
 			 */
 			Two_Factor_Enrollment_Notify::notify( $user, $provider->get_label() );
+
+			/**
+			 * Fires once, when this plugin has permanently enrolled a user.
+			 *
+			 * The policy layer owns all deferral counting and deadline state,
+			 * and this plugin persists none of it — so this is the signal that
+			 * tells the policy layer to stop counting. It fires only on the
+			 * branch that actually appends the provider, never on a repeat
+			 * login.
+			 *
+			 * @param WP_User             $user     The newly enrolled user.
+			 * @param Two_Factor_Provider $provider The provider enrolled into.
+			 */
+			do_action( 'two_factor_enrollment_enrolled', $user, $provider );
 		}
 
 		$primary = get_user_meta( $user->ID, Two_Factor_Core::PROVIDER_USER_META_KEY, true );
