@@ -1121,11 +1121,11 @@ class Two_Factor_Enrollment_Onboarding {
 					 */
 					?>
 					<p>
-						<?php esc_html_e( 'Save these somewhere safe now. If you ever lose access to your email, they are the only way back into your account, and each code works once.', 'two-factor-enrollment' ); ?>
+						<?php esc_html_e( 'Save these somewhere safe now. If you ever lose access to your email, they are the only way back into your account, and each code works once only.', 'two-factor-enrollment' ); ?>
 					</p>
 
 					<p class="two-factor-enrollment-caveat">
-						<?php esc_html_e( 'They will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
+						<?php esc_html_e( 'They will not be shown again, although you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
 					</p>
 
 					<div class="two-factor-enrollment-credential-block">
