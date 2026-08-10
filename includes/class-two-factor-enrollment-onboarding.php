@@ -452,8 +452,11 @@ class Two_Factor_Enrollment_Onboarding {
 	 *
 	 * Two Factor core builds its own download link the same way (see
 	 * Two_Factor_Backup_Codes::rest_generate_codes()). Reusing the pattern
-	 * keeps this screen JS-free and asset-free, which phpcs.xml.dist relies on
-	 * — this plugin ships no scripts and no styles by design.
+	 * keeps the download working with JavaScript off or unavailable: this
+	 * plugin does ship a small inline script and stylesheet for this screen
+	 * (see login_enqueue_scripts()), but they are progressive enhancement —
+	 * click-to-copy and presentation only. The download link itself, and the
+	 * codes it contains, never depend on either one running.
 	 *
 	 * @param string[] $codes The freshly generated codes.
 	 * @return string
