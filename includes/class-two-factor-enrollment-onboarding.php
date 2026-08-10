@@ -724,6 +724,33 @@ class Two_Factor_Enrollment_Onboarding {
 				line-height: 2;
 			}
 
+			/* wp-admin/css/login.css floats every .button-primary on login
+			 * screens (`.login .button-primary { float: right; }`,
+			 * login.css:208-210). .two-factor-enrollment-actions is
+			 * `display: flex` above, and flex items never float -- the
+			 * float computes to its used value of `none` per spec -- so
+			 * the Download codes button inside it is unaffected and needs
+			 * no override here.
+			 *
+			 * The Continue button below has no such protection: its
+			 * container, .two-factor-enrollment-continue, is a plain <p>
+			 * and the last child of the card
+			 * (.two-factor-enrollment-onboarding). A floated child does
+			 * not contribute to the height of its container, so without
+			 * this rule the button renders outside the bottom border of
+			 * the card. Core hits the identical problem and fixes it the
+			 * identical way at login.css:248-250
+			 * (`.login .admin-email__actions .button-primary { float:
+			 * none; ... }`): neutralise the float and control alignment
+			 * from the containing element instead of clearing it. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-continue {
+				text-align: right;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-continue .button-primary {
+				float: none;
+			}
+
 			@media (max-width: 380px) {
 				body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes {
 					grid-template-columns: 1fr;

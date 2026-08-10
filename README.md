@@ -7,6 +7,8 @@ cookie is issued**.
 Implements the onboarding flow described in
 [WordPress/two-factor#813](https://github.com/WordPress/two-factor/issues/813).
 
+![The one-time onboarding screen: a user's ten backup codes, with options to download or copy them, shown once immediately after their first two-factor login.](assets/screenshot-1.png)
+
 ## What it does
 
 When a covered user logs in without a second factor configured, this plugin adds
@@ -108,28 +110,84 @@ companion policy plugin, or a few lines in a theme or mu-plugin.
 
 ## Usage
 
-```php
-// Require enrollment for everyone who can publish.
-add_filter(
-	'two_factor_enrollment_required',
-	function ( $required, $user ) {
-		return user_can( $user, 'edit_posts' );
-	},
-	10,
-	2
-);
-```
+The plugin does nothing until something answers `two_factor_enrollment_required`.
+By default no one is required to enroll and no one may defer, so an install with
+no policy callback registered is a permanent no-op.
+
+### Where the policy lives
+
+Put it in `wp-content/mu-plugins/`. Must-use plugins cannot be deactivated from
+the admin, which matters when the whole point is that covered users cannot opt
+out.
 
 ```php
-// Let users who are within their first 14 days defer enrollment.
-add_filter(
-	'two_factor_enrollment_deferrable',
-	function ( $deferrable, $user ) {
-		return ( time() - strtotime( $user->user_registered ) ) < 14 * DAY_IN_SECONDS;
-	},
-	10,
-	2
-);
+<?php
+/**
+ * Plugin Name: Two-Factor Enrollment Policy
+ * Description: Decides who must enroll in two-factor authentication.
+ */
+
+add_filter( 'two_factor_enrollment_required', function ( $required, $user ) {
+	return user_can( $user, 'edit_posts' );
+}, 10, 2 );
+```
+
+That covers everyone who can publish — administrators, editors, authors,
+contributors — and leaves subscribers and customers alone.
+
+Other predicates follow the same shape:
+
+| Who must enroll | Predicate |
+|---|---|
+| Everyone | `true` |
+| Administrators only | `user_can( $user, 'manage_options' )` |
+| Specific roles | `(bool) array_intersect( array( 'administrator', 'editor' ), (array) $user->roles )` |
+| Everyone except a service account | `'svc-integration' !== $user->user_login` |
+
+### Staged rollout
+
+This is what the deferral filter is for: require enrollment for everyone, but
+let most people defer it until a later date while a smaller group enrolls
+immediately.
+
+```php
+add_filter( 'two_factor_enrollment_required', '__return_true', 10, 2 );
+
+add_filter( 'two_factor_enrollment_deferrable', function ( $allowed, $user ) {
+	// Admins enroll now; everyone else can defer until the deadline.
+	if ( user_can( $user, 'manage_options' ) ) {
+		return false;
+	}
+	return time() < strtotime( '2026-09-01' );
+}, 10, 2 );
+```
+
+A user who is currently allowed to defer logs in entirely normally — no
+challenge, no screen, nothing to notice — and enrolls on their next login once
+the condition flips. This plugin stores no deferral state of its own, which is
+exactly why the condition can be a date, a login count, or per-user meta
+without it knowing anything about it.
+
+### Before switching it on
+
+Mail must work, because the second factor **is** the email: if transactional
+mail is broken, every covered user is locked out at their next login. Test
+delivery to a real mailbox first, and keep a known-good administrator session
+open while you roll out. If [Require Email 2FA](#compatibility-with-require-email-2fa)
+is also active on the site, deactivate it or scope the two so they do not
+overlap — running both means neither one's rollout logic actually runs.
+
+### Observing enrollment
+
+`two_factor_enrollment_enrolled` fires once per user, the moment this plugin
+permanently enrolls them — see the [Filters](#filters) table below for its full
+signature. During a rollout that is a convenient hook for a log line or a
+dashboard counter:
+
+```php
+add_action( 'two_factor_enrollment_enrolled', function ( $user, $provider ) {
+	error_log( sprintf( 'Enrolled %s via %s', $user->user_login, $provider->get_key() ) );
+}, 10, 2 );
 ```
 
 ## Filters

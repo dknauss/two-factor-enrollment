@@ -973,4 +973,51 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$this->assertMatchesRegularExpression( '/max-width:\s*\d+px/', $style );
 		$this->assertStringNotContainsString( 'max-width: 1000px', $style );
 	}
+
+	/**
+	 * wp-admin/css/login.css floats every .button-primary on login screens
+	 * (`.login .button-primary { float: right; }`). The Continue button is
+	 * `<a class="button button-primary">`, the last child of the card
+	 * (.two-factor-enrollment-onboarding), inside a plain <p> that neither
+	 * clears nor otherwise contains that float -- so without an override
+	 * the button renders outside the card's bottom border instead of
+	 * contributing to its height.
+	 *
+	 * This asserts the emitted CSS actually neutralises the float on the
+	 * Continue button specifically (`.two-factor-enrollment-continue
+	 * .button-primary { float: none; ... }`), the same fix core applies to
+	 * its own equivalent case at login.css:248-250
+	 * (`.admin-email__actions .button-primary`). Asserting only that
+	 * *some* `float: none` appears in the stylesheet would stay green even
+	 * if the rule were scoped to the wrong selector, or removed and
+	 * replaced with an unrelated `float: none` elsewhere -- the regex
+	 * anchors on the `.two-factor-enrollment-continue .button-primary`
+	 * selector to rule that out.
+	 */
+	public function test_login_enqueue_scripts_neutralises_the_float_on_the_continue_button() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding \.two-factor-enrollment-continue \.button-primary\s*\{[^}]*float:\s*none/',
+			$style,
+			'The Continue button must have its core-imposed float neutralised, or it renders outside the card.'
+		);
+
+		// The neutralised float leaves the button with no other source of
+		// alignment, so the containing <p> must right-align it itself --
+		// otherwise the button silently reverts to the left edge instead
+		// of just failing to escape the card.
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding \.two-factor-enrollment-continue\s*\{[^}]*text-align:\s*right/',
+			$style,
+			'The Continue button\'s container must right-align it now that float is no longer doing so.'
+		);
+	}
 }
