@@ -1357,4 +1357,48 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 			'The status badge must be styled, and scoped to this screen like everything else here.'
 		);
 	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * The method icon (docs/ux-backlog.md item 3).
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * Inline SVG, not dashicons: the login screen does not enqueue the
+	 * dashicons stylesheet, so using it would mean pulling in a whole icon
+	 * font for one glyph — and this plugin still ships no asset files at
+	 * all. An <img> would be a second HTTP request for the same reason.
+	 */
+	public function test_render_body_draws_the_method_icon_inline() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringContainsString( '<svg', $html );
+		$this->assertStringContainsString( 'two-factor-enrollment-method-icon', $html );
+		$this->assertStringNotContainsString( 'dashicons', $html );
+	}
+
+	/**
+	 * The icon is decorative and must be hidden from assistive technology.
+	 * The text immediately beside it already reads "Authenticator app"; an
+	 * exposed icon would either announce that twice or, unlabelled,
+	 * announce nothing useful while still taking a stop in the reading
+	 * order. focusable="false" covers the same ground for the tab order,
+	 * where an <svg> is focusable by default in some engines.
+	 */
+	public function test_render_body_method_icon_is_decorative() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$start = strpos( $html, '<svg' );
+		$this->assertNotFalse( $start, 'The method icon SVG was not found.' );
+
+		$tag = substr( $html, $start );
+		$end = strpos( $tag, '>' );
+		$this->assertNotFalse( $end, 'The SVG tag was not terminated.' );
+
+		$tag = substr( $tag, 0, $end + 1 );
+
+		$this->assertStringContainsString( 'aria-hidden="true"', $tag );
+		$this->assertStringContainsString( 'focusable="false"', $tag );
+	}
 }

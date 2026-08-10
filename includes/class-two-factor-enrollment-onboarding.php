@@ -731,6 +731,11 @@ class Two_Factor_Enrollment_Onboarding {
 				color: #1d2327;
 			}
 
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-method-icon {
+				flex: 0 0 auto;
+				color: #50575e;
+			}
+
 			/* A state chip, not a warning: this is the normal state of an
 			 * offer the user has not taken up yet, so it stays neutral grey
 			 * rather than borrowing any of the notice colours. */
@@ -1086,6 +1091,22 @@ class Two_Factor_Enrollment_Onboarding {
 				 */
 				?>
 				<p class="two-factor-enrollment-method">
+					<?php
+					/*
+					 * Inline SVG rather than dashicons: the login screen
+					 * never enqueues that stylesheet, so the alternative is
+					 * loading an entire icon font for one glyph. It is
+					 * decorative — the text beside it already says
+					 * "Authenticator app" — so it is hidden from assistive
+					 * technology and taken out of the tab order, and it
+					 * inherits currentColor so it tracks the label rather
+					 * than needing its own colour rule.
+					 */
+					?>
+					<svg class="two-factor-enrollment-method-icon" width="18" height="18" viewBox="0 0 20 20" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+						<rect x="5.75" y="2.75" width="8.5" height="14.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/>
+						<path d="M8.75 14.75h2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+					</svg>
 					<strong class="two-factor-enrollment-method-name"><?php esc_html_e( 'Authenticator app', 'two-factor-enrollment' ); ?></strong>
 					<span class="two-factor-enrollment-badge"><?php esc_html_e( 'Not set up', 'two-factor-enrollment' ); ?></span>
 				</p>
