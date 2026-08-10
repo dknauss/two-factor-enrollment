@@ -900,6 +900,66 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The empty .catch() finding, caught where it actually lives: the
+	 * emitted script, not the markup. render_body()'s HTML-side tests
+	 * (test_render_body_copy_button_carries_failure_feedback_data_attributes()
+	 * and friends) only prove the failure-label data attributes exist —
+	 * they would keep passing even if the .catch() handler that is supposed
+	 * to read them were reverted to an empty no-op, because nothing on the
+	 * markup side inspects the script at all.
+	 *
+	 * This isolates the .catch( function () { ... } ) callback body from the
+	 * emitted script and asserts it actually calls announce() — the same
+	 * function the .then() success handler calls — rather than doing
+	 * nothing. A bare .catch() with an empty or missing body fails the
+	 * second assertion (no match, or an empty captured group); a .catch()
+	 * that silently swallows the rejection without calling announce() fails
+	 * the announce() assertion. Either reintroduces the defect this test
+	 * exists to catch.
+	 */
+	public function test_login_enqueue_scripts_inline_script_announces_on_clipboard_failure() {
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$script = implode( "\n", (array) wp_scripts()->get_data( 'two-factor-enrollment-onboarding', 'after' ) );
+
+		$found = preg_match( '/\.catch\(\s*function\s*\(\s*\)\s*\{([^}]*)\}\s*\)/s', $script, $matches );
+
+		$this->assertSame( 1, $found, 'The inline script must attach a .catch() handler with a real body to the clipboard write promise.' );
+		$this->assertStringContainsString(
+			'announce(',
+			$matches[1],
+			'The .catch() handler must call announce() to tell the user the copy failed, not silently do nothing.'
+		);
+	}
+
+	/**
+	 * The reintroduced-button.disabled finding: setting button.disabled
+	 * while the button holds keyboard focus forcibly moves focus to <body>,
+	 * which is exactly why failure feedback is announced through a sibling
+	 * status element instead (see
+	 * test_render_body_includes_a_status_span_for_copy_feedback() and the
+	 * inline_script() docblock). The markup-only tests that check for the
+	 * absence of aria-live on the <button> do not exercise the script at all
+	 * and would not notice button.disabled being reintroduced there. This
+	 * inspects the emitted script text directly.
+	 */
+	public function test_login_enqueue_scripts_inline_script_never_disables_the_copy_button() {
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$script = implode( "\n", (array) wp_scripts()->get_data( 'two-factor-enrollment-onboarding', 'after' ) );
+
+		$this->assertStringNotContainsString(
+			'.disabled',
+			$script,
+			'Setting button.disabled would steal keyboard focus from the button that has it while it is focused.'
+		);
+	}
+
+	/**
 	 * Requirement 2: no bullets on the codes. The list-style reset has to be
 	 * scoped to this screen's own class, or it leaks onto the ordinary login
 	 * and two-factor challenge screens.
