@@ -16,6 +16,32 @@
 class Two_Factor_Enrollment_Gate {
 
 	/**
+	 * User IDs this plugin injected the Email provider for during this request.
+	 *
+	 * Keys are user IDs, values are always true. This is the policy gate for
+	 * persist_enrollment(): the `two_factor_user_authenticated` action fires
+	 * for *every* user who authenticates with the Email provider, including
+	 * users this plugin had nothing to do with. The most consequential case is
+	 * Two_Factor_Core::get_available_providers_for_user(), which force-enables
+	 * Email at runtime for any user whose enabled-providers meta contains only
+	 * providers that no longer exist (anyone who had FIDO U2F before Two Factor
+	 * 0.9.0). Without this record, such a user would be permanently enrolled,
+	 * emailed, and diverted to onboarding on a site where no policy filter is
+	 * registered at all — violating the rule that installing this plugin alone
+	 * changes nothing.
+	 *
+	 * Recording the injection is exact where re-evaluating the policy filters
+	 * would only be approximate: it is true precisely for the enrollments this
+	 * plugin caused. filter_enabled_providers() always runs before the action
+	 * within the same request, because Two_Factor_Core::validate_login_form_2fa()
+	 * resolves the provider (via get_enabled_providers_for_user()) before it
+	 * fires `two_factor_user_authenticated`.
+	 *
+	 * @var array
+	 */
+	private static $injected = array();
+
+	/**
 	 * Register hooks.
 	 *
 	 * @return void
@@ -68,7 +94,22 @@ class Two_Factor_Enrollment_Gate {
 
 		$providers[] = Two_Factor_Enrollment::EMAIL_PROVIDER;
 
+		self::$injected[ (int) $user_id ] = true;
+
 		return $providers;
+	}
+
+	/**
+	 * Forget which users the Email provider was injected for.
+	 *
+	 * The record is per-request state and needs no clearing in production,
+	 * where the process ends with the request. It is exposed because the test
+	 * suite simulates many requests inside a single PHP process.
+	 *
+	 * @return void
+	 */
+	public static function reset_injections() {
+		self::$injected = array();
 	}
 
 	/**
@@ -77,6 +118,10 @@ class Two_Factor_Enrollment_Gate {
 	 * Until this runs, the Email provider is only injected at runtime. Once the
 	 * user has actually received and entered an emailed code, mailbox control
 	 * is proven and the enrollment is made real and visible in their profile.
+	 *
+	 * Nothing happens at all unless this plugin is the reason the user was
+	 * challenged with Email — see self::$injected. Every write below, the
+	 * primary-provider write included, is behind that gate.
 	 *
 	 * A notification is sent, and the onboarding screen is marked "owed"
 	 * (Two_Factor_Enrollment_Onboarding::STATE_PENDING), only on the branch
@@ -98,6 +143,20 @@ class Two_Factor_Enrollment_Gate {
 			return;
 		}
 
+		if ( empty( self::$injected[ $user->ID ] ) ) {
+			return;
+		}
+
+		/*
+		 * The enabled-providers list is read from and written to user meta by
+		 * hand here, deliberately. Two_Factor_Core::enable_provider_for_user()
+		 * reads the current list via get_enabled_providers_for_user(), which
+		 * fires this plugin's own two_factor_enabled_providers_for_user
+		 * filter — so using the core API would persist the runtime-injected
+		 * Email entry and destroy the invariant that the injection leaves no
+		 * trace until the challenge is actually passed. Do not "simplify"
+		 * this to the core API.
+		 */
 		$enabled = get_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true );
 
 		if ( ! is_array( $enabled ) ) {

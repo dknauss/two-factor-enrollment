@@ -18,6 +18,7 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 			)
 		);
 		reset_phpmailer_instance();
+		Two_Factor_Enrollment_Gate::reset_injections();
 	}
 
 	public function tear_down() {
@@ -25,8 +26,28 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 		remove_all_filters( 'two_factor_enrollment_deferrable' );
 		remove_all_filters( 'two_factor_providers' );
 		remove_all_filters( 'two_factor_enrollment_notify' );
+		remove_all_actions( 'two_factor_enrollment_enrolled' );
 		reset_phpmailer_instance();
+		Two_Factor_Enrollment_Gate::reset_injections();
 		parent::tear_down();
+	}
+
+	/**
+	 * Put the user into the state persist_enrollment() requires: covered by
+	 * policy, and actually injected by this plugin's gate in this request.
+	 *
+	 * persist_enrollment() writes nothing for a user this plugin did not
+	 * itself challenge, so every test of its write behaviour has to establish
+	 * that precondition the same way a real login does — by running the gate.
+	 *
+	 * @return void
+	 */
+	private function inject_via_gate() {
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+
+		// Self-check: if the gate stopped injecting, the tests below would
+		// pass for the wrong reason.
+		$this->assertContains( 'Two_Factor_Email', Two_Factor_Core::get_enabled_providers_for_user( $this->user_id ) );
 	}
 
 	public function test_no_injection_when_not_required() {
@@ -75,6 +96,10 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	public function test_persist_enrollment_unaffected_by_deferrable_filter() {
+		$this->inject_via_gate();
+
+		// A policy that flips to deferrable after the challenge was already
+		// issued must not strand the user half-enrolled.
 		add_filter( 'two_factor_enrollment_deferrable', '__return_true' );
 
 		$user = get_user_by( 'id', $this->user_id );
@@ -137,6 +162,8 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	public function test_persist_enrollment_writes_user_meta() {
+		$this->inject_via_gate();
+
 		$user = get_user_by( 'id', $this->user_id );
 
 		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
@@ -152,6 +179,8 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	public function test_persist_enrollment_ignores_other_providers() {
+		$this->inject_via_gate();
+
 		$user = get_user_by( 'id', $this->user_id );
 
 		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Totp::get_instance() );
@@ -161,6 +190,8 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 
 	public function test_persist_enrollment_does_not_clobber_existing_providers() {
 		update_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array( 'Two_Factor_Backup_Codes' ) );
+
+		$this->inject_via_gate();
 
 		$user = get_user_by( 'id', $this->user_id );
 
@@ -173,6 +204,8 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	public function test_persist_enrollment_is_idempotent() {
+		$this->inject_via_gate();
+
 		$user = get_user_by( 'id', $this->user_id );
 
 		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
@@ -185,6 +218,8 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	public function test_persist_enrollment_sends_notification_mail_on_new_enrollment() {
+		$this->inject_via_gate();
+
 		$user = get_user_by( 'id', $this->user_id );
 
 		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
@@ -197,6 +232,8 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	public function test_persist_enrollment_marks_onboarding_pending_on_new_enrollment() {
+		$this->inject_via_gate();
+
 		$user = get_user_by( 'id', $this->user_id );
 
 		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
@@ -208,6 +245,8 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	public function test_persist_enrollment_does_not_reset_onboarding_after_it_is_done() {
+		$this->inject_via_gate();
+
 		$user = get_user_by( 'id', $this->user_id );
 
 		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
@@ -224,6 +263,8 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 	}
 
 	public function test_persist_enrollment_does_not_resend_notification_mail() {
+		$this->inject_via_gate();
+
 		$user = get_user_by( 'id', $this->user_id );
 
 		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
@@ -239,5 +280,76 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 		$mailer = tests_retrieve_phpmailer_instance();
 
 		$this->assertFalse( $mailer->get_sent() );
+	}
+
+	/**
+	 * The regression guard for the whole "installing this plugin alone changes
+	 * nothing" contract.
+	 *
+	 * `two_factor_user_authenticated` fires for every user who authenticates
+	 * with the Email provider, on every site, whether or not this plugin was
+	 * involved. With no policy filter registered, persist_enrollment() must be
+	 * inert: no provider written, no primary provider set, no onboarding
+	 * marker, no mail.
+	 */
+	public function test_persist_enrollment_writes_nothing_without_policy() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$this->assertSame( '', get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true ) );
+		$this->assertSame( '', get_user_meta( $this->user_id, Two_Factor_Core::PROVIDER_USER_META_KEY, true ) );
+		$this->assertSame( '', get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true ) );
+
+		$mailer = tests_retrieve_phpmailer_instance();
+
+		$this->assertFalse( $mailer->get_sent() );
+	}
+
+	/**
+	 * The concrete case behind the guard above.
+	 *
+	 * Two_Factor_Core::get_available_providers_for_user() force-enables Email
+	 * at runtime for a user whose enabled-providers meta holds only providers
+	 * that no longer exist — every account that had FIDO U2F before Two Factor
+	 * 0.9.0. That user authenticates with Email through no doing of this
+	 * plugin, and must not be enrolled, mailed, or diverted to onboarding.
+	 */
+	public function test_persist_enrollment_ignores_cores_forced_email_fallback() {
+		update_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array( 'Two_Factor_FIDO_U2F' ) );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		// Confirm the premise: core really does force Email on for this user.
+		$available = Two_Factor_Core::get_available_providers_for_user( $user );
+
+		$this->assertArrayHasKey( 'Two_Factor_Email', $available );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$this->assertSame(
+			array( 'Two_Factor_FIDO_U2F' ),
+			get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true )
+		);
+		$this->assertSame( '', get_user_meta( $this->user_id, Two_Factor_Core::PROVIDER_USER_META_KEY, true ) );
+		$this->assertSame( '', get_user_meta( $this->user_id, Two_Factor_Enrollment_Onboarding::ONBOARDED_META_KEY, true ) );
+
+		$mailer = tests_retrieve_phpmailer_instance();
+
+		$this->assertFalse( $mailer->get_sent() );
+	}
+
+	/**
+	 * The hook registration itself. Without this action wired up nothing ever
+	 * makes an enrollment permanent, and deleting the add_action() line would
+	 * otherwise leave the entire suite green.
+	 */
+	public function test_gate_hooks_are_registered() {
+		$this->assertNotFalse(
+			has_filter( 'two_factor_enabled_providers_for_user', array( 'Two_Factor_Enrollment_Gate', 'filter_enabled_providers' ) )
+		);
+		$this->assertNotFalse(
+			has_action( 'two_factor_user_authenticated', array( 'Two_Factor_Enrollment_Gate', 'persist_enrollment' ) )
+		);
 	}
 }
