@@ -29,9 +29,11 @@ class Two_Factor_Enrollment {
 		require_once TWO_FACTOR_ENROLLMENT_DIR . 'includes/class-two-factor-enrollment-gate.php';
 		require_once TWO_FACTOR_ENROLLMENT_DIR . 'includes/class-two-factor-enrollment-notify.php';
 		require_once TWO_FACTOR_ENROLLMENT_DIR . 'includes/class-two-factor-enrollment-onboarding.php';
+		require_once TWO_FACTOR_ENROLLMENT_DIR . 'includes/class-two-factor-enrollment-admin.php';
 
 		Two_Factor_Enrollment_Gate::add_hooks();
 		Two_Factor_Enrollment_Onboarding::add_hooks();
+		Two_Factor_Enrollment_Admin::add_hooks();
 	}
 
 	/**
