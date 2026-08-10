@@ -1309,4 +1309,52 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 			'The gate must be armed only when the acknowledgement, its checkbox and the Continue button are all present.'
 		);
 	}
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * The upgrade offer's status badge (docs/ux-backlog.md item 2).
+	 * ---------------------------------------------------------------------
+	 */
+
+	/**
+	 * The offer names the method and states its status, so a user can tell
+	 * at a glance that this is a thing they do not yet have rather than
+	 * having to infer it from prose.
+	 *
+	 * "Not set up" is a statement of fact here, not a guess. This screen is
+	 * only reached with the onboarding marker in the 'pending' state, which
+	 * only Two_Factor_Enrollment_Gate::persist_enrollment() sets, and only
+	 * for a user who had no configured provider at all when they logged in.
+	 * A user who already had an authenticator app configured never enrolls
+	 * through this plugin and never sees this screen.
+	 */
+	public function test_render_body_gives_the_authenticator_offer_a_name_and_a_status() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringContainsString( 'two-factor-enrollment-badge', $html );
+		$this->assertStringContainsString( 'Authenticator app', $html );
+		$this->assertStringContainsString( 'Not set up', $html );
+	}
+
+	/**
+	 * The badge is a state chip, so it has to read as one. Unstyled it is
+	 * just two more words in a paragraph, which is the thing this item
+	 * exists to stop.
+	 */
+	public function test_login_enqueue_scripts_styles_the_status_badge() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding \.two-factor-enrollment-badge\s*\{/',
+			$style,
+			'The status badge must be styled, and scoped to this screen like everything else here.'
+		);
+	}
 }

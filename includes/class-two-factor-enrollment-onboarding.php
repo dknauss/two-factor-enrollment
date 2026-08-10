@@ -719,6 +719,33 @@ class Two_Factor_Enrollment_Onboarding {
 				margin-bottom: 0;
 			}
 
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-method {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				margin: 0 0 8px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-method-name {
+				font-size: 14px;
+				color: #1d2327;
+			}
+
+			/* A state chip, not a warning: this is the normal state of an
+			 * offer the user has not taken up yet, so it stays neutral grey
+			 * rather than borrowing any of the notice colours. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-badge {
+				display: inline-block;
+				background: #f0f0f1;
+				border: 1px solid #dcdcde;
+				border-radius: 9px;
+				padding: 1px 10px;
+				font-size: 12px;
+				line-height: 1.6;
+				color: #50575e;
+				white-space: nowrap;
+			}
+
 			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-credential-block {
 				background: #f6f7f7;
 				border: 1px solid #c3c4c7;
@@ -1047,6 +1074,21 @@ class Two_Factor_Enrollment_Onboarding {
 
 			<section class="two-factor-enrollment-section">
 				<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
+
+				<?php
+				/*
+				 * "Not set up" is a statement of fact, not a guess. This
+				 * screen is only reachable with the onboarding marker in the
+				 * 'pending' state, which only the gate sets, and only for a
+				 * user who had no configured provider at all when they
+				 * signed in. A user who already had an authenticator app
+				 * never enrolls through this plugin and never arrives here.
+				 */
+				?>
+				<p class="two-factor-enrollment-method">
+					<strong class="two-factor-enrollment-method-name"><?php esc_html_e( 'Authenticator app', 'two-factor-enrollment' ); ?></strong>
+					<span class="two-factor-enrollment-badge"><?php esc_html_e( 'Not set up', 'two-factor-enrollment' ); ?></span>
+				</p>
 
 				<p>
 					<?php esc_html_e( 'An authenticator app generates codes instantly, with no waiting for email. You can set one up any time from your profile.', 'two-factor-enrollment' ); ?>
