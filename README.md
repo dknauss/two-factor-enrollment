@@ -184,6 +184,59 @@ down and shows an admin notice. Enrolling users into a non-Email provider
 requires configuration after login, which needs a session — see
 [WordPress/two-factor#934](https://github.com/WordPress/two-factor/issues/934).
 
+## Compatibility with Require Email 2FA
+
+[Require Email 2FA](https://github.com/dknauss/Require-Email-2FA) solves the same
+problem a different way, and the two do **not** compose — running both gives you
+Require Email 2FA's behavior and none of this plugin's.
+
+Both hook `two_factor_enabled_providers_for_user` at priority 10. WordPress
+runs same-priority callbacks in the order their `add_filter()` calls were
+registered, which for two plugins hooking on `plugins_loaded` (or earlier)
+follows their order in `active_plugins` — so this behavior holds only when
+Require Email 2FA is active and sorts ahead of Two-Factor Enrollment in that
+list, which is the case whenever both are simply activated in a typical
+install. Given that ordering, Require Email 2FA enables the Email provider for
+every user it covers before this plugin's gate runs, so the gate sees Email
+already in the list and correctly leaves it alone: no enrollment is recorded,
+no onboarding screen is shown, no backup codes are generated, and no
+notification is sent. If that order were ever reversed — deliberately, via a
+priority change, or by a loader that does not follow `active_plugins` order —
+Two-Factor Enrollment's gate would run first instead, and the two plugins
+would no longer agree on which one governs a given login. They are not
+designed to be reordered relative to each other; treat this as one plugin
+winning by default, not as a coordination contract between them.
+
+They are alternatives rather than layers:
+
+|  | Require Email 2FA | Two-Factor Enrollment |
+|---|---|---|
+| How the second factor arrives | Enabled silently for everyone covered | User completes an emailed challenge at login |
+| Mailbox proven? | No — enabled whether or not mail works | Yes, before enrollment is recorded |
+| Recovery codes | Not provided | Generated, enabled, and shown once |
+| User is told | No | Yes, by email |
+| Rollout friction | None | One extra step at next login |
+
+Require Email 2FA trades consent for a frictionless rollout with no lockout risk
+at switch-on. This plugin trades a login-time interaction for a proven mailbox
+and a working recovery path. Pick the one that suits the site.
+
+To move from one to the other, deactivate Require Email 2FA and express its
+coverage as a policy filter here. Its `force_2fa_excluded_roles` list inverts
+into an inclusion predicate:
+
+```php
+add_filter(
+	'two_factor_enrollment_required',
+	function ( $required, $user ) {
+		$excluded = array( 'subscriber' ); // whatever FORCE_2FA_EXCLUDED_ROLES held
+		return ! array_intersect( $excluded, (array) $user->roles );
+	},
+	10,
+	2
+);
+```
+
 ## Uninstalling
 
 The only state this plugin persists of its own is the single

@@ -25,7 +25,14 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		remove_all_filters( 'two_factor_enrollment_required' );
 		remove_all_filters( 'two_factor_providers' );
 		remove_all_filters( 'wp_redirect' );
-		unset( $_REQUEST[ Two_Factor_Enrollment_Onboarding::TOKEN_ARG ], $_REQUEST['redirect_to'] );
+		unset( $_REQUEST[ Two_Factor_Enrollment_Onboarding::TOKEN_ARG ], $_REQUEST['redirect_to'], $_REQUEST['action'] );
+
+		// login_enqueue_scripts() registers and enqueues this handle purely to
+		// carry an inline script; leaving it registered would let one test's
+		// enqueue call read as "already enqueued" in the next.
+		wp_dequeue_script( 'two-factor-enrollment-onboarding' );
+		wp_deregister_script( 'two-factor-enrollment-onboarding' );
+
 		parent::tear_down();
 	}
 
@@ -407,14 +414,20 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	/**
 	 * This screen is the lockout-recovery path. Codes the user cannot save are
 	 * codes the user will not have, so the download link is load-bearing — and
-	 * it has to be the JS-free data: URI, because this plugin ships no scripts
-	 * and phpcs.xml.dist is written on that assumption.
+	 * it has to be the JS-free data: URI, because it must keep working with
+	 * JavaScript disabled or unavailable. This plugin does ship one small
+	 * inline script for click-to-copy (see login_enqueue_scripts()), but
+	 * render_body() itself — the HTML this test inspects — never emits a
+	 * `<script>` tag; the script is injected separately, from a conditional
+	 * hook, only for this screen's own action. It is also styled as the
+	 * primary button, not a bare inline link.
 	 */
 	public function test_render_body_offers_a_download_link_for_the_codes() {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
 
 		$this->assertStringContainsString( 'href="data:application/text;charset=utf-8,', $html );
 		$this->assertStringContainsString( 'download="two-factor-backup-codes.txt"', $html );
+		$this->assertStringContainsString( 'class="button button-primary two-factor-enrollment-download"', $html );
 		$this->assertStringNotContainsString( '<script', $html );
 	}
 
@@ -594,5 +607,370 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( $codes, admin_url() );
 
 		$this->assertStringNotContainsString( 'Save your backup codes', $html );
+	}
+
+	/**
+	 * The codes stay a <ul> for its semantics as a list of ten discrete
+	 * values, but must not read as prose bullets. The class it carries is
+	 * exactly what login_enqueue_scripts()'s CSS targets to strip the
+	 * markers — see test_login_enqueue_scripts_removes_bullets_from_the_codes_list().
+	 */
+	public function test_render_body_codes_are_a_list_carrying_the_no_bullet_style_hook() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( '<ul class="two-factor-enrollment-codes">', $html );
+	}
+
+	/**
+	 * The copy button is an addition, never a replacement: it only appears
+	 * alongside real codes, ships hidden by default (see
+	 * test_login_enqueue_scripts_ships_the_copy_button_hidden_by_default()),
+	 * and is a real <button>, not a click handler bolted onto a <div>. It
+	 * carries no aria-live of its own — see
+	 * test_render_body_includes_a_status_span_for_copy_feedback() for where
+	 * that lives instead, and why.
+	 */
+	public function test_render_body_includes_a_copy_button_when_codes_are_present() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( '<button type="button" class="button two-factor-enrollment-copy" hidden', $html );
+		$this->assertStringContainsString( 'data-default-label="Copy codes"', $html );
+		$this->assertStringContainsString( 'data-copied-label="Copied!"', $html );
+		$this->assertStringNotContainsString( 'aria-live', $html );
+	}
+
+	/**
+	 * The empty .catch() finding: a rejected clipboard write (a permissions
+	 * policy denial, a cross-origin frame, an unfocused document) must not
+	 * leave the user with silent nothing. The button needs a distinct
+	 * failure label and status text pointing at the always-working download
+	 * button, both provided as data attributes for the inline script to
+	 * read.
+	 */
+	public function test_render_body_copy_button_carries_failure_feedback_data_attributes() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( 'data-failed-label="Couldn&#039;t copy"', $html );
+		$this->assertStringContainsString( 'download button instead', $html );
+	}
+
+	/**
+	 * Requirement 7's other half: setting button.disabled while the button
+	 * holds focus would forcibly move keyboard focus to <body>, so
+	 * copy/failure feedback is announced via a sibling status element
+	 * instead of an aria-live region on the button itself. role="status" is
+	 * implicitly aria-live="polite" without needing the attribute spelled
+	 * out, and screen-reader-text keeps it inaudible-but-present rather than
+	 * a second visible message competing with the button's own label swap.
+	 */
+	public function test_render_body_includes_a_status_span_for_copy_feedback() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( '<span class="two-factor-enrollment-copy-status screen-reader-text" role="status">', $html );
+	}
+
+	/**
+	 * No codes, nothing to copy: the whole codes section — download link
+	 * included — is already omitted when there are no codes to show, and the
+	 * copy button and its status span must not be exceptions.
+	 */
+	public function test_render_body_omits_the_copy_button_when_there_are_no_codes() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringNotContainsString( 'two-factor-enrollment-copy', $html );
+	}
+
+	/**
+	 * The defect this test exists to catch: the clipboard copy must join the
+	 * codes with a real separator (one per line), not run them together into
+	 * a single indistinguishable string. A test that only checks for the
+	 * copy button's existence — as test_render_body_includes_a_copy_button_
+	 * when_codes_are_present() above does — would not catch a regression
+	 * here; this test inspects the actual payload value.
+	 *
+	 * The separator is "\r\n", matching codes_download_link()'s file output,
+	 * not a bare "\n" — see clipboard_payload()'s docblock for why an
+	 * LF-only payload pasted into a CRLF-only target is functionally the
+	 * same failure this test guards against.
+	 */
+	public function test_clipboard_payload_joins_codes_with_newlines_only() {
+		$codes = array( 'aaaa1111', 'bbbb2222', 'cccc3333' );
+
+		$payload = Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes );
+
+		$this->assertSame( "aaaa1111\r\nbbbb2222\r\ncccc3333", $payload );
+	}
+
+	/**
+	 * The direct negative case: this is exactly what the reported defect
+	 * produced — all ten codes concatenated with no separator at all. Naming
+	 * the wrong shape explicitly, rather than only asserting the right one,
+	 * is what makes this test discriminate against a regression back to it.
+	 */
+	public function test_clipboard_payload_is_not_the_naive_concatenation() {
+		$codes = array( 'aaaa1111', 'bbbb2222', 'cccc3333' );
+
+		$payload = Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes );
+
+		$this->assertNotSame( implode( '', $codes ), $payload );
+		$this->assertStringNotContainsString( 'aaaa1111bbbb2222', $payload );
+	}
+
+	/**
+	 * "Nothing else" means nothing else: no numbering (a corrupting no-op if
+	 * pasted into a single code field) and no site name or URL (deliberately
+	 * less identifying context than the downloaded file carries — see
+	 * clipboard_payload()'s docblock). codes_download_link() is the file's
+	 * equivalent and is the one place this context belongs.
+	 */
+	public function test_clipboard_payload_omits_numbering_and_title() {
+		$codes = array( 'aaaa1111', 'bbbb2222' );
+
+		$payload = Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes );
+
+		$this->assertStringNotContainsString( '1. aaaa1111', $payload );
+		$this->assertStringNotContainsString( 'Two-Factor Recovery Codes', $payload );
+		$this->assertStringNotContainsString( home_url( '/' ), $payload );
+	}
+
+	/**
+	 * The round-trip that actually matters: what a browser will do with the
+	 * markup render_body() emits. This decodes the data-codes-payload
+	 * attribute exactly the way the inline script does — HTML-attribute
+	 * decoding (what esc_attr() produced), then JSON.parse() (what
+	 * wp_json_encode() produced) — and confirms the result is the real,
+	 * newline-joined clipboard_payload() value, not the ten codes run
+	 * together. Unlike a substring check against the raw HTML, this proves
+	 * the value that actually reaches navigator.clipboard.writeText().
+	 */
+	public function test_render_body_embeds_the_clipboard_payload_as_escaped_json() {
+		$codes = array( 'aaaa1111', 'bbbb2222', 'cccc3333' );
+
+		$html = Two_Factor_Enrollment_Onboarding::render_body( $codes, admin_url() );
+
+		$found = preg_match( '/data-codes-payload="([^"]*)"/', $html, $matches );
+		$this->assertSame( 1, $found, 'The copy button must carry a data-codes-payload attribute.' );
+
+		$decoded_json = html_entity_decode( $matches[1], ENT_QUOTES );
+		$payload      = json_decode( $decoded_json );
+
+		$this->assertSame( Two_Factor_Enrollment_Onboarding::clipboard_payload( $codes ), $payload );
+		$this->assertSame( "aaaa1111\r\nbbbb2222\r\ncccc3333", $payload );
+		$this->assertNotSame( implode( '', $codes ), $payload );
+	}
+
+	/**
+	 * The download link is the fallback the copy button is not: it must be
+	 * a plain, always-present <a href> with no hidden attribute and no
+	 * dependency on the inline script ever running, so it keeps working with
+	 * JavaScript disabled or navigator.clipboard unavailable.
+	 */
+	public function test_render_body_download_link_has_no_hidden_attribute_and_works_without_js() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$start = strpos( $html, '<a class="button button-primary two-factor-enrollment-download"' );
+
+		// (int) strpos( ... ) silently reads a not-found (false) result as 0
+		// and would slice the *start* of the markup instead of failing, so a
+		// reordered or renamed download link would make this assertion
+		// inspect the wrong text and still pass. Fail loudly instead.
+		$this->assertNotFalse( $start, 'The download link markup was not found in render_body() output.' );
+
+		$download_tag = substr( $html, $start );
+
+		$end = strpos( $download_tag, '>' );
+		$this->assertNotFalse( $end, 'The download link tag was not terminated.' );
+
+		$download_tag = substr( $download_tag, 0, $end + 1 );
+
+		$this->assertStringNotContainsString( 'hidden', $download_tag );
+	}
+
+	/**
+	 * login_enqueue_scripts() must be wired up, or none of the CSS/JS below
+	 * this point ever reaches the browser.
+	 */
+	public function test_login_enqueue_scripts_is_registered_on_the_hook() {
+		$this->assertNotFalse(
+			has_action( 'login_enqueue_scripts', array( 'Two_Factor_Enrollment_Onboarding', 'login_enqueue_scripts' ) )
+		);
+	}
+
+	/**
+	 * The whole point of gating on the current action: this hook fires on
+	 * every wp-login.php request, for every action, so a request for the
+	 * ordinary login screen (or any other screen) must leave no trace behind
+	 * — no registered script handle, nothing enqueued, and no inline CSS
+	 * attached to the shared 'login' style handle either.
+	 *
+	 * The wp_script_is() assertion alone does not exercise the
+	 * wp_add_inline_style( 'login', ... ) call: that call attaches to a
+	 * handle the ordinary login screen also uses, rather than registering
+	 * anything of its own, so a version of login_enqueue_scripts() that
+	 * called it unconditionally — above, rather than below, the
+	 * is_this_screen() guard — would still pass a script-only assertion.
+	 * Registering and enqueuing a stub 'login' handle first, the way the
+	 * real login_header() would have by the time this hook fires, makes
+	 * wp_styles()->get_data( 'login', 'after' ) the thing that actually
+	 * proves the CSS is scoped to this screen's own action.
+	 */
+	public function test_login_enqueue_scripts_does_nothing_off_its_own_screen() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = 'login';
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$this->assertFalse( wp_script_is( 'two-factor-enrollment-onboarding', 'registered' ) );
+		$this->assertEmpty( wp_styles()->get_data( 'login', 'after' ) );
+	}
+
+	/**
+	 * Same guard, the other near-miss: no action at all (the default the
+	 * ordinary login screen is reached with) must also leave nothing
+	 * enqueued and no inline CSS attached to 'login'. See the docblock above
+	 * for why the style assertion, not just the script assertion, is what
+	 * actually discriminates here.
+	 */
+	public function test_login_enqueue_scripts_does_nothing_without_an_action() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		unset( $_REQUEST['action'] );
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$this->assertFalse( wp_script_is( 'two-factor-enrollment-onboarding', 'registered' ) );
+		$this->assertEmpty( wp_styles()->get_data( 'login', 'after' ) );
+	}
+
+	/**
+	 * On this screen's own action, the inline script must actually be
+	 * enqueued — registering it and never enqueuing would silently ship
+	 * nothing to the browser.
+	 */
+	public function test_login_enqueue_scripts_enqueues_the_inline_script_for_this_screen() {
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$this->assertTrue( wp_script_is( 'two-factor-enrollment-onboarding', 'enqueued' ) );
+	}
+
+	/**
+	 * The inline script must feature-detect navigator.clipboard rather than
+	 * assuming it exists (it is undefined outside a secure context, which
+	 * covers plenty of real WordPress installs on plain HTTP), and must
+	 * reveal the copy button only once that check passes — it ships hidden
+	 * in the markup for exactly this reason.
+	 *
+	 * That is only half the guarantee. The `hidden` attribute on its own
+	 * does not hide the button: wp-includes/css/buttons.css sets
+	 * `.wp-core-ui .button { display: inline-block }`, an author-origin
+	 * declaration that beats the `[hidden]` UA-stylesheet default, and
+	 * login_header() puts `wp-core-ui` on `<body>`. Asserting only the JS
+	 * *source text* (as this test previously did in full) would stay green
+	 * even if the CSS half of the fix were missing or reverted — the exact
+	 * shape of the Critical finding this pair of assertions exists to catch.
+	 * So this also inspects the emitted CSS itself and confirms it actually
+	 * computes to `display: none` for a hidden button, not just that the
+	 * script intends to unhide one.
+	 */
+	public function test_login_enqueue_scripts_ships_the_copy_button_hidden_by_default() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$script = implode( "\n", (array) wp_scripts()->get_data( 'two-factor-enrollment-onboarding', 'after' ) );
+
+		$this->assertStringContainsString( 'navigator.clipboard', $script );
+		$this->assertStringContainsString( 'button.hidden = false', $script );
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/\.two-factor-enrollment-copy\[hidden\]\s*\{[^}]*display:\s*none/',
+			$style,
+			'The emitted CSS must actually hide the [hidden] copy button, not just carry a script that intends to reveal it.'
+		);
+	}
+
+	/**
+	 * Requirement 2: no bullets on the codes. The list-style reset has to be
+	 * scoped to this screen's own class, or it leaks onto the ordinary login
+	 * and two-factor challenge screens.
+	 */
+	public function test_login_enqueue_scripts_removes_bullets_from_the_codes_list() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertStringContainsString( 'login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes', $style );
+		$this->assertStringContainsString( 'list-style: none', $style );
+	}
+
+	/**
+	 * Requirement 1: the WordPress.org logo sits directly above one-time
+	 * recovery codes and links off-site; following it loses them for good.
+	 * Hiding it must be scoped to this screen's body class alone.
+	 *
+	 * This targets `#login h1 a`, not `#login h1` itself, and checks for the
+	 * clip/absolute-position technique rather than `display: none`. On
+	 * WordPress 6.5-6.8 (the README's stated floor) that `<h1>` is the only
+	 * heading on the page; hiding the whole element with `display: none`
+	 * would strip it from the accessibility tree, not just the screen. See
+	 * inline_style()'s docblock for the full reasoning.
+	 */
+	public function test_login_enqueue_scripts_hides_the_wordpress_logo_for_this_screen_only() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding #login h1 a\s*\{[^}]*clip:/',
+			$style
+		);
+
+		// The <h1> element itself must not be hidden outright -- only the
+		// off-site link inside it -- or a 6.5-6.8 install loses its only
+		// heading.
+		$this->assertDoesNotMatchRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding #login h1\s*\{[^}]*display:\s*none/',
+			$style
+		);
+	}
+
+	/**
+	 * Requirement 7: the 320px default login box cramps ten codes and three
+	 * paragraphs into a scroll. The widened container must stay well short
+	 * of the 1000px upstream used for a screen with far more content.
+	 */
+	public function test_login_enqueue_scripts_widens_the_login_container_modestly() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertStringContainsString( 'login-action-two_factor_enrollment_onboarding #login {', $style );
+		$this->assertMatchesRegularExpression( '/max-width:\s*\d+px/', $style );
+		$this->assertStringNotContainsString( 'max-width: 1000px', $style );
 	}
 }

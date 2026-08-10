@@ -79,6 +79,7 @@ class Two_Factor_Enrollment_Onboarding {
 	public static function add_hooks() {
 		add_filter( 'login_redirect', array( __CLASS__, 'filter_login_redirect' ), 20, 3 );
 		add_action( 'login_form_' . self::ACTION, array( __CLASS__, 'render' ) );
+		add_action( 'login_enqueue_scripts', array( __CLASS__, 'login_enqueue_scripts' ) );
 	}
 
 	/**
@@ -451,8 +452,11 @@ class Two_Factor_Enrollment_Onboarding {
 	 *
 	 * Two Factor core builds its own download link the same way (see
 	 * Two_Factor_Backup_Codes::rest_generate_codes()). Reusing the pattern
-	 * keeps this screen JS-free and asset-free, which phpcs.xml.dist relies on
-	 * — this plugin ships no scripts and no styles by design.
+	 * keeps the download working with JavaScript off or unavailable: this
+	 * plugin does ship a small inline script and stylesheet for this screen
+	 * (see login_enqueue_scripts()), but they are progressive enhancement —
+	 * click-to-copy and presentation only. The download link itself, and the
+	 * codes it contains, never depend on either one running.
 	 *
 	 * @param string[] $codes The freshly generated codes.
 	 * @return string
@@ -478,6 +482,353 @@ class Two_Factor_Enrollment_Onboarding {
 	}
 
 	/**
+	 * Build the clipboard payload for the click-to-copy button: the codes,
+	 * newline-separated, and nothing else.
+	 *
+	 * This format is a deliberate choice, not a leftover default:
+	 *
+	 * - One code per line is what a human pastes into a password manager
+	 *   note, a text file, or a printed sheet without editing first. Comma-
+	 *   or tab-separated would need cleaning up before it is usable.
+	 * - The line ending is "\r\n", matching codes_download_link()'s file
+	 *   output below, not a bare "\n". A paste target that only recognizes
+	 *   CRLF (a Windows-flavored text field being the common case) would
+	 *   otherwise render an LF-only payload as one run-together line —
+	 *   indistinguishable from the very concatenation bug this method exists
+	 *   to avoid, just introduced one layer down. Keeping both methods on
+	 *   the same line ending means there is exactly one behavior to reason
+	 *   about, not two that quietly disagree.
+	 * - No numbering. The "1." "2." prefixes in codes_download_link()'s file
+	 *   and in the on-screen list are visual aids for reading a list; in
+	 *   stored text they are noise, and they corrupt the value if someone
+	 *   pastes a single line into a code-entry field.
+	 * - No site name or URL header, deliberately, even though
+	 *   codes_download_link()'s downloaded *file* carries one. The clipboard
+	 *   is a more exposed surface than a file the user chose to save:
+	 *   clipboard managers persist history, and any application the user
+	 *   focuses next can read it. The codes alone are meaningless to anyone
+	 *   who does not already know where they came from, so the clipboard
+	 *   copy should carry less identifying context than the file, not the
+	 *   same amount.
+	 *
+	 * @param string[] $codes The freshly generated codes.
+	 * @return string
+	 */
+	public static function clipboard_payload( $codes ) {
+		return implode( "\r\n", $codes );
+	}
+
+	/**
+	 * Whether the current wp-login.php request is this screen's own action.
+	 *
+	 * login_enqueue_scripts fires from inside login_header(), before this
+	 * class's render() has run far enough to offer any other hook to key
+	 * off of, so this reads $_REQUEST['action'] directly -- the same source
+	 * wp-login.php itself resolves the $action global from. This is a
+	 * read-only comparison against a public query argument with no
+	 * state-changing effect of its own; it authorizes nothing the way the
+	 * one-time token in render() does, it only decides whether this
+	 * screen's CSS and JS are enqueued.
+	 *
+	 * @return bool
+	 */
+	private static function is_this_screen() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only comparison against the current login action; nothing here changes state.
+		$action = isset( $_REQUEST['action'] ) && is_string( $_REQUEST['action'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['action'] ) ) : '';
+
+		return self::ACTION === $action;
+	}
+
+	/**
+	 * Enqueue this screen's presentation assets.
+	 *
+	 * Scoped to this screen's own wp-login.php action via is_this_screen(),
+	 * so none of this reaches the ordinary login screen or the two-factor
+	 * challenge screen itself -- both share the same 'login' style handle
+	 * this hooks into.
+	 *
+	 * The 'login' style handle is already registered and enqueued by the
+	 * time login_enqueue_scripts fires (wp_enqueue_style( 'login' ) runs
+	 * earlier in login_header()), so wp_add_inline_style() can attach to it
+	 * directly without registering anything of its own.
+	 *
+	 * There is no equivalent shared script handle on the login page, so a
+	 * placeholder handle (no src) is registered here purely to carry the
+	 * inline script via wp_add_inline_script(); this does not add a script
+	 * asset file, and the plugin still ships none.
+	 *
+	 * @return void
+	 */
+	public static function login_enqueue_scripts() {
+		if ( ! self::is_this_screen() ) {
+			return;
+		}
+
+		wp_add_inline_style( 'login', self::inline_style() );
+
+		wp_register_script( 'two-factor-enrollment-onboarding', false, array(), TWO_FACTOR_ENROLLMENT_VERSION, true );
+		wp_enqueue_script( 'two-factor-enrollment-onboarding' );
+		wp_add_inline_script( 'two-factor-enrollment-onboarding', self::inline_script() );
+	}
+
+	/**
+	 * CSS for this screen, scoped entirely under its own body class so
+	 * nothing here can leak onto the ordinary login screen or the
+	 * two-factor challenge screen.
+	 *
+	 * This is a static string with no interpolated data of any kind, so
+	 * there is nothing here for esc_attr()/esc_html() to protect against --
+	 * the appropriate "escaping" for trusted, developer-authored CSS handed
+	 * to wp_add_inline_style() is exactly that: a constant string, never
+	 * built from request or user data.
+	 *
+	 * @return string
+	 */
+	private static function inline_style() {
+		return '
+			body.login-action-two_factor_enrollment_onboarding #login {
+				width: 100%;
+				max-width: 480px;
+				padding-top: 60px;
+			}
+
+			/* The WordPress.org logo above the login form is an off-site
+			 * link sitting directly above one-time recovery codes; following
+			 * it would abandon this screen and lose the codes for good.
+			 *
+			 * This hides the link visually rather than removing the <h1>
+			 * itself. WordPress 7.0 gives the page a second, separate
+			 * <h1 class="screen-reader-text"> outside #login, but on 6.5-6.8
+			 * (the stated minimum WordPress version) #login h1 is the only
+			 * heading on the page; `display: none` on the whole element
+			 * would strip it from the accessibility tree entirely. The clip
+			 * technique below mirrors the .screen-reader-text rule
+			 * WordPress core itself uses: the link (and the logo image it
+			 * carries) disappears from the screen and cannot be clicked,
+			 * but the heading and its text remain for assistive
+			 * technology. */
+			body.login-action-two_factor_enrollment_onboarding #login h1 a {
+				border: 0;
+				clip: rect(1px, 1px, 1px, 1px);
+				clip-path: inset(50%);
+				height: 1px;
+				margin: -1px;
+				overflow: hidden;
+				padding: 0;
+				position: absolute;
+				width: 1px;
+				word-wrap: normal;
+			}
+
+			/* wp-includes/css/buttons.css sets `.wp-core-ui .button` to
+			 * `display: inline-block`, and login_header() puts wp-core-ui on
+			 * <body>. That author-origin declaration beats the [hidden]
+			 * attribute UA-stylesheet default of display:none, so the copy
+			 * button below -- which starts hidden until inline_script()
+			 * confirms navigator.clipboard is available -- would otherwise
+			 * render as a full, non-functional button on any page where the
+			 * script never runs (plain HTTP, JS disabled, a strict CSP). The
+			 * specificity of this rule, (0,3,1), beats the (0,2,0) of
+			 * .wp-core-ui .button, so it wins regardless of stylesheet
+			 * order. */
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-copy[hidden] {
+				display: none;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding {
+				background: #fff;
+				border: 1px solid #c3c4c7;
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+				padding: 32px 32px 24px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-section {
+				margin: 0 0 28px;
+				padding: 0 0 28px;
+				border-bottom: 1px solid #dcdcde;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-section:last-child {
+				margin-bottom: 0;
+				padding-bottom: 0;
+				border-bottom: none;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding h2,
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding h3 {
+				margin: 0 0 12px;
+				font-size: 20px;
+				line-height: 1.3;
+				font-weight: 600;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding h3 {
+				font-size: 16px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p {
+				margin: 0 0 16px;
+				font-size: 14px;
+				line-height: 1.6;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-onboarding p:last-child {
+				margin-bottom: 0;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-credential-block {
+				background: #f6f7f7;
+				border: 1px solid #c3c4c7;
+				border-radius: 4px;
+				padding: 16px 20px 8px;
+				margin: 0 0 20px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes {
+				display: grid;
+				grid-template-columns: repeat(2, 1fr);
+				gap: 8px 20px;
+				margin: 0;
+				padding: 0;
+				list-style: none;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes li {
+				margin: 0 0 8px;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes code {
+				display: block;
+				background: #fff;
+				border: 1px solid #dcdcde;
+				border-radius: 3px;
+				padding: 6px 10px;
+				font-family: Consolas, Monaco, monospace;
+				font-size: 15px;
+				letter-spacing: 0.03em;
+				color: #1d2327;
+				text-align: center;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-actions {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 8px;
+				margin: 0;
+			}
+
+			body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-actions .button-primary {
+				padding: 4px 20px;
+				height: auto;
+				line-height: 2;
+			}
+
+			@media (max-width: 380px) {
+				body.login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes {
+					grid-template-columns: 1fr;
+				}
+			}
+		';
+	}
+
+	/**
+	 * JS for this screen's click-to-copy affordance.
+	 *
+	 * navigator.clipboard is undefined outside a secure context (plain HTTP,
+	 * broadly), so the copy button ships `hidden` in the markup and this
+	 * only reveals it once the API is confirmed present -- a page with no
+	 * JavaScript, or JavaScript that finds no clipboard API, simply leaves
+	 * the button hidden rather than showing one that would silently do
+	 * nothing. The download link needs none of this and keeps working
+	 * either way.
+	 *
+	 * Passing feature detection only proves navigator.clipboard.writeText
+	 * exists, not that a call to it will succeed: a clipboard-write
+	 * permissions policy, a cross-origin iframe, an unfocused document, or
+	 * the user simply denying the prompt can all still reject the promise.
+	 * The .catch() below is not a no-op for that reason -- it swaps the
+	 * button to a distinct failure label and updates the status span so the
+	 * user is told the copy did not happen and is pointed at the download
+	 * button, which does not depend on any of this.
+	 *
+	 * The status span is a separate element from the button, not an
+	 * aria-live region on the button itself, because setting
+	 * button.disabled while the button holds focus would forcibly move
+	 * keyboard focus to <body>. The label swap on the button is feedback
+	 * enough for sighted users; the sibling status span (role="status", so
+	 * implicitly aria-live="polite") is what a screen reader announces,
+	 * without ever touching focus or disabling the control.
+	 *
+	 * This is a static string with no interpolated data of any kind -- the
+	 * translated labels and the codes themselves live in the markup's data
+	 * attributes, already escaped there with esc_attr() (and, for the codes
+	 * payload, wp_json_encode() underneath that -- see render_body() and
+	 * clipboard_payload()), not built into this string. Reading the payload
+	 * from a data attribute rather than re-deriving it by scraping and
+	 * joining the on-screen code nodes here keeps the newline-separated,
+	 * no-numbering, no-title format defined in exactly one place
+	 * (clipboard_payload()) instead of two that could drift apart.
+	 *
+	 * @return string
+	 */
+	private static function inline_script() {
+		return '
+			( function () {
+				if ( ! window.navigator || ! navigator.clipboard || ! navigator.clipboard.writeText ) {
+					return;
+				}
+
+				var button = document.querySelector( ".two-factor-enrollment-copy" );
+
+				if ( ! button ) {
+					return;
+				}
+
+				var status = document.querySelector( ".two-factor-enrollment-copy-status" );
+				var resetTimer = null;
+
+				var announce = function ( label, statusText ) {
+					var originalLabel = button.getAttribute( "data-default-label" );
+
+					window.clearTimeout( resetTimer );
+
+					button.textContent = label;
+
+					if ( status ) {
+						status.textContent = statusText;
+					}
+
+					resetTimer = window.setTimeout( function () {
+						button.textContent = originalLabel;
+
+						if ( status ) {
+							status.textContent = "";
+						}
+					}, 2000 );
+				};
+
+				button.hidden = false;
+
+				button.addEventListener( "click", function () {
+					var payload = JSON.parse( button.getAttribute( "data-codes-payload" ) );
+
+					navigator.clipboard.writeText( payload ).then( function () {
+						announce( button.getAttribute( "data-copied-label" ), button.getAttribute( "data-copied-status" ) );
+					} ).catch( function () {
+						// The feature-detect above only confirms the API exists, not that
+						// a write will succeed (a permissions policy, a cross-origin
+						// frame, an unfocused document, or a user denial can still
+						// reject it). Tell the user nothing was copied and point them at
+						// the download button, which always works.
+						announce( button.getAttribute( "data-failed-label" ), button.getAttribute( "data-failed-status" ) );
+					} );
+				} );
+			} )();
+		';
+	}
+
+	/**
 	 * Build the onboarding screen markup.
 	 *
 	 * @param array  $codes       Freshly generated backup codes, or an empty
@@ -493,43 +844,93 @@ class Two_Factor_Enrollment_Onboarding {
 		ob_start();
 		?>
 		<div class="two-factor-enrollment-onboarding">
-			<h2><?php esc_html_e( 'Two-factor authentication is on', 'two-factor-enrollment' ); ?></h2>
-
-			<p>
-				<?php esc_html_e( 'From now on, signing in will send a one-time code to your email address.', 'two-factor-enrollment' ); ?>
-			</p>
-
-			<?php if ( ! empty( $codes ) ) : ?>
-				<h3><?php esc_html_e( 'Save your backup codes', 'two-factor-enrollment' ); ?></h3>
+			<section class="two-factor-enrollment-section">
+				<h2><?php esc_html_e( 'Two-factor authentication is on', 'two-factor-enrollment' ); ?></h2>
 
 				<p>
-					<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — these codes will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
+					<?php esc_html_e( 'From now on, signing in will send a one-time code to your email address.', 'two-factor-enrollment' ); ?>
 				</p>
+			</section>
 
-				<ul class="two-factor-enrollment-codes">
-					<?php foreach ( $codes as $code ) : ?>
-						<li><code><?php echo esc_html( $code ); ?></code></li>
-					<?php endforeach; ?>
-				</ul>
+			<?php if ( ! empty( $codes ) ) : ?>
+				<section class="two-factor-enrollment-section">
+					<h3><?php esc_html_e( 'Save your backup codes', 'two-factor-enrollment' ); ?></h3>
 
-				<p class="two-factor-enrollment-download">
-					<a href="<?php echo esc_url( self::codes_download_link( $codes ), array( 'data' ) ); ?>" download="two-factor-backup-codes.txt">
-						<?php esc_html_e( 'Download codes', 'two-factor-enrollment' ); ?>
-					</a>
-				</p>
+					<p>
+						<?php esc_html_e( 'If you ever lose access to your email, these codes are the only way back into your account. Each one works once. Save them somewhere safe now — these codes will not be shown again, though you can generate a new set from your profile any time you are signed in.', 'two-factor-enrollment' ); ?>
+					</p>
+
+					<div class="two-factor-enrollment-credential-block">
+						<ul class="two-factor-enrollment-codes">
+							<?php foreach ( $codes as $code ) : ?>
+								<li><code><?php echo esc_html( $code ); ?></code></li>
+							<?php endforeach; ?>
+						</ul>
+					</div>
+
+					<p class="two-factor-enrollment-actions">
+						<a class="button button-primary two-factor-enrollment-download" href="<?php echo esc_url( self::codes_download_link( $codes ), array( 'data' ) ); ?>" download="two-factor-backup-codes.txt">
+							<?php esc_html_e( 'Download codes', 'two-factor-enrollment' ); ?>
+						</a>
+						<?php
+						/*
+						 * The payload is built once, in PHP, by clipboard_payload() --
+						 * codes separated by "\r\n" and nothing else -- then carried to
+						 * the click handler as JSON (wp_json_encode()) inside an
+						 * HTML attribute (esc_attr()). Double-escaped for its two
+						 * nested contexts: JSON for the JS string the click handler
+						 * will JSON.parse(), then HTML-attribute escaping around
+						 * that. This is the "properly escaped for its context" rule
+						 * the brief calls out, and it is why this is wp_json_encode()
+						 * rather than hand-built string concatenation.
+						 *
+						 * wp_json_encode() can return false (e.g. a payload containing
+						 * invalid UTF-8). Practically unreachable here -- the payload is
+						 * this plugin's own freshly generated backup codes, never
+						 * arbitrary input -- but esc_attr( false ) is '', and
+						 * JSON.parse( '' ) throws uncaught in the click handler.
+						 * The fallback below (a valid JSON string) costs nothing and
+						 * keeps that failure mode from ever reaching the browser. It
+						 * is written as an explicit if(), not the `?:` short-ternary
+						 * form, only because the project coding standard forbids
+						 * short ternaries; the behavior is the same either way, and
+						 * on the PHP 7.2 floor both forms are available (`??=` is
+						 * not, and is not used here).
+						 */
+						$codes_payload_json = wp_json_encode( self::clipboard_payload( $codes ) );
+
+						if ( false === $codes_payload_json ) {
+							$codes_payload_json = '""';
+						}
+						?>
+						<button type="button" class="button two-factor-enrollment-copy" hidden
+							data-default-label="<?php echo esc_attr__( 'Copy codes', 'two-factor-enrollment' ); ?>"
+							data-copied-label="<?php echo esc_attr__( 'Copied!', 'two-factor-enrollment' ); ?>"
+							data-copied-status="<?php echo esc_attr__( 'Codes copied to the clipboard.', 'two-factor-enrollment' ); ?>"
+							data-failed-label="<?php echo esc_attr__( "Couldn't copy", 'two-factor-enrollment' ); ?>"
+							data-failed-status="<?php echo esc_attr__( "Couldn't copy the codes automatically. Use the download button instead.", 'two-factor-enrollment' ); ?>"
+							data-codes-payload="<?php echo esc_attr( $codes_payload_json ); ?>"
+						>
+							<?php esc_html_e( 'Copy codes', 'two-factor-enrollment' ); ?>
+						</button>
+						<span class="two-factor-enrollment-copy-status screen-reader-text" role="status"></span>
+					</p>
+				</section>
 			<?php endif; ?>
 
-			<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
+			<section class="two-factor-enrollment-section">
+				<h3><?php esc_html_e( 'Want something faster?', 'two-factor-enrollment' ); ?></h3>
 
-			<p>
-				<?php esc_html_e( 'An authenticator app generates codes instantly, with no waiting for email. You can set one up any time from your profile.', 'two-factor-enrollment' ); ?>
-			</p>
+				<p>
+					<?php esc_html_e( 'An authenticator app generates codes instantly, with no waiting for email. You can set one up any time from your profile.', 'two-factor-enrollment' ); ?>
+				</p>
 
-			<p>
-				<a href="<?php echo esc_url( $profile_url ); ?>">
-					<?php esc_html_e( 'Set up an authenticator app', 'two-factor-enrollment' ); ?>
-				</a>
-			</p>
+				<p>
+					<a href="<?php echo esc_url( $profile_url ); ?>">
+						<?php esc_html_e( 'Set up an authenticator app', 'two-factor-enrollment' ); ?>
+					</a>
+				</p>
+			</section>
 
 			<p class="two-factor-enrollment-continue">
 				<a class="button button-primary" href="<?php echo esc_url( $redirect_to ); ?>">
