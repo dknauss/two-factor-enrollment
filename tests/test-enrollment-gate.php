@@ -27,6 +27,7 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 		remove_all_filters( 'two_factor_providers' );
 		remove_all_filters( 'two_factor_enrollment_notify' );
 		remove_all_actions( 'two_factor_enrollment_enrolled' );
+		remove_filter( 'send_auth_cookies', '__return_false', PHP_INT_MAX );
 		reset_phpmailer_instance();
 		Two_Factor_Enrollment_Gate::reset_injections();
 		parent::tear_down();
@@ -109,6 +110,102 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 		$this->assertSame(
 			array( 'Two_Factor_Email' ),
 			get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true )
+		);
+	}
+
+	/**
+	 * Whether Two_Factor_Core::filter_authenticate() has suppressed the auth
+	 * cookie.
+	 *
+	 * has_filter() is no use here: the WordPress test suite registers its own
+	 * `__return_false` on send_auth_cookies at priority 10 and has_filter()
+	 * reports whichever it finds first. Core's suppression is specifically at
+	 * PHP_INT_MAX, so look there.
+	 *
+	 * @return bool
+	 */
+	private function auth_cookies_suppressed() {
+		global $wp_filter;
+
+		if ( ! isset( $wp_filter['send_auth_cookies'][ PHP_INT_MAX ] ) ) {
+			return false;
+		}
+
+		foreach ( $wp_filter['send_auth_cookies'][ PHP_INT_MAX ] as $callback ) {
+			if ( '__return_false' === $callback['function'] ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * The whole design rests on this: for a user this plugin injects Email
+	 * for, Two_Factor_Core::filter_authenticate() must suppress the auth
+	 * cookie, so no password-only session is ever created. Everything else in
+	 * this file tests that property by proxy; this tests it directly.
+	 */
+	public function test_auth_cookie_is_withheld_for_an_injected_user() {
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		// The premise: cookies are not already suppressed for some other
+		// reason, so the assertion below is about this login.
+		$this->assertFalse( $this->auth_cookies_suppressed() );
+
+		$result = Two_Factor_Core::filter_authenticate( $user );
+
+		$this->assertInstanceOf( 'WP_User', $result );
+		$this->assertTrue( $this->auth_cookies_suppressed() );
+	}
+
+	/**
+	 * The other half of the same property: with no policy covering the user,
+	 * this plugin must not interfere with an ordinary password login.
+	 */
+	public function test_auth_cookie_is_not_withheld_for_an_uncovered_user() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Core::filter_authenticate( $user );
+
+		$this->assertFalse( $this->auth_cookies_suppressed() );
+	}
+
+	/**
+	 * The no-chooser property. If a covered user could pick a method other
+	 * than Email, an attacker holding only the password could steer enrollment
+	 * toward a factor that does not depend on the mailbox — which is the race
+	 * this plugin exists to close.
+	 */
+	public function test_required_path_offers_no_provider_choice() {
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		$this->assertSame(
+			array( 'Two_Factor_Email' ),
+			array_keys( Two_Factor_Core::get_available_providers_for_user( $user ) )
+		);
+	}
+
+	/**
+	 * Same property for a user carrying an unconfigured provider in their
+	 * enabled-providers meta — someone who started setting up an authenticator
+	 * app and never finished. The half-configured entry must not become a
+	 * second option on the challenge screen.
+	 */
+	public function test_required_path_offers_no_choice_despite_an_unconfigured_totp_entry() {
+		update_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array( 'Two_Factor_Totp' ) );
+
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		$this->assertSame(
+			array( 'Two_Factor_Email' ),
+			array_keys( Two_Factor_Core::get_available_providers_for_user( $user ) )
 		);
 	}
 
