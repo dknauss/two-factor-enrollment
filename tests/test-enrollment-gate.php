@@ -80,4 +80,52 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 
 		$this->assertSame( '', get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true ) );
 	}
+
+	public function test_persist_enrollment_writes_user_meta() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$this->assertSame(
+			array( 'Two_Factor_Email' ),
+			get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true )
+		);
+		$this->assertSame(
+			'Two_Factor_Email',
+			get_user_meta( $this->user_id, Two_Factor_Core::PROVIDER_USER_META_KEY, true )
+		);
+	}
+
+	public function test_persist_enrollment_ignores_other_providers() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Totp::get_instance() );
+
+		$this->assertSame( '', get_user_meta( $this->user_id, Two_Factor_Core::PROVIDER_USER_META_KEY, true ) );
+	}
+
+	public function test_persist_enrollment_does_not_clobber_existing_providers() {
+		update_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array( 'Two_Factor_Backup_Codes' ) );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$enabled = get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true );
+
+		$this->assertContains( 'Two_Factor_Backup_Codes', $enabled );
+		$this->assertContains( 'Two_Factor_Email', $enabled );
+	}
+
+	public function test_persist_enrollment_is_idempotent() {
+		$user = get_user_by( 'id', $this->user_id );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, Two_Factor_Email::get_instance() );
+
+		$this->assertSame(
+			array( 'Two_Factor_Email' ),
+			get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true )
+		);
+	}
 }

@@ -22,6 +22,7 @@ class Two_Factor_Enrollment_Gate {
 	 */
 	public static function add_hooks() {
 		add_filter( 'two_factor_enabled_providers_for_user', array( __CLASS__, 'filter_enabled_providers' ), 10, 2 );
+		add_action( 'two_factor_user_authenticated', array( __CLASS__, 'persist_enrollment' ), 10, 2 );
 	}
 
 	/**
@@ -59,6 +60,44 @@ class Two_Factor_Enrollment_Gate {
 		$providers[] = Two_Factor_Enrollment::EMAIL_PROVIDER;
 
 		return $providers;
+	}
+
+	/**
+	 * Write the enrollment to user meta after a successful challenge.
+	 *
+	 * Until this runs, the Email provider is only injected at runtime. Once the
+	 * user has actually received and entered an emailed code, mailbox control
+	 * is proven and the enrollment is made real and visible in their profile.
+	 *
+	 * @param WP_User             $user     The authenticated user.
+	 * @param Two_Factor_Provider $provider The provider used to authenticate.
+	 * @return void
+	 */
+	public static function persist_enrollment( $user, $provider ) {
+		if ( ! $user instanceof WP_User ) {
+			return;
+		}
+
+		if ( ! is_object( $provider ) || Two_Factor_Enrollment::EMAIL_PROVIDER !== $provider->get_key() ) {
+			return;
+		}
+
+		$enabled = get_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true );
+
+		if ( ! is_array( $enabled ) ) {
+			$enabled = array();
+		}
+
+		if ( ! in_array( Two_Factor_Enrollment::EMAIL_PROVIDER, $enabled, true ) ) {
+			$enabled[] = Two_Factor_Enrollment::EMAIL_PROVIDER;
+			update_user_meta( $user->ID, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, array_values( $enabled ) );
+		}
+
+		$primary = get_user_meta( $user->ID, Two_Factor_Core::PROVIDER_USER_META_KEY, true );
+
+		if ( empty( $primary ) ) {
+			update_user_meta( $user->ID, Two_Factor_Core::PROVIDER_USER_META_KEY, Two_Factor_Enrollment::EMAIL_PROVIDER );
+		}
 	}
 
 	/**
