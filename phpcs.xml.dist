@@ -26,6 +26,12 @@
 	which is noise, not a finding. If this plugin ever ships a standalone
 	.js or .css asset file, remove this exclusion and let these sniffs run
 	for real.
+
+	The trade this accepts: embedding the script as a PHP string literal
+	means no linter — these excluded sniffs or any other JS tool — ever
+	parses it as JavaScript. Correctness there rests on code review and the
+	PHPUnit coverage in tests/test-enrollment-onboarding.php, not static
+	analysis.
 	-->
 	<rule ref="WordPress-VIP-Go">
 		<exclude name="WordPressVIPMinimum.JS.Window"/>
