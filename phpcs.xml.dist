@@ -11,7 +11,25 @@
 	<arg value="sp"/>
 
 	<rule ref="WordPress-Extra"/>
-	<rule ref="WordPress-VIP-Go"/>
+
+	<!--
+	These six WordPressVIPMinimum.JS.* sniffs cannot fire against this codebase:
+	`extensions="php"` above means PHPCS never opens a JS or CSS file, and this
+	plugin ships no JS and no CSS by design (no build step, no runtime JS/CSS
+	dependencies — the single screen it renders is server-side HTML). VIPCS
+	still emits a "listening for JS" deprecation notice for each one at ruleset
+	load time regardless, which is noise, not a finding. If this plugin ever
+	adds JS or CSS assets, remove this exclusion and let these sniffs run for
+	real.
+	-->
+	<rule ref="WordPress-VIP-Go">
+		<exclude name="WordPressVIPMinimum.JS.Window"/>
+		<exclude name="WordPressVIPMinimum.JS.DangerouslySetInnerHTML"/>
+		<exclude name="WordPressVIPMinimum.JS.InnerHTML"/>
+		<exclude name="WordPressVIPMinimum.JS.StrippingTags"/>
+		<exclude name="WordPressVIPMinimum.JS.StringConcat"/>
+		<exclude name="WordPressVIPMinimum.JS.HTMLExecutingFunctions"/>
+	</rule>
 
 	<rule ref="WordPress.WP.I18n">
 		<properties>
