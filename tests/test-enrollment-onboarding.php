@@ -245,6 +245,31 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The other side of the token: it must not make the screen unreachable in
+	 * the normal flow. Take the URL the user is actually sent to, pull the
+	 * token back out of the query string, and check it against the value
+	 * render() will compare — so URL encoding cannot quietly break the only
+	 * path to the recovery screen.
+	 */
+	public function test_the_redirect_token_round_trips_to_what_render_compares() {
+		$this->seed_pending_enrollment();
+
+		$user = get_user_by( 'id', $this->user_id );
+		$url  = Two_Factor_Enrollment_Onboarding::filter_login_redirect( admin_url(), admin_url(), $user );
+
+		$query = array();
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertArrayHasKey( Two_Factor_Enrollment_Onboarding::TOKEN_ARG, $query );
+		$this->assertTrue(
+			hash_equals(
+				Two_Factor_Enrollment_Onboarding::pending_token( $this->user_id ),
+				$query[ Two_Factor_Enrollment_Onboarding::TOKEN_ARG ]
+			)
+		);
+	}
+
+	/**
 	 * The finding this token exists for.
 	 *
 	 * render() is a state-changing GET: it generates the user's only backup

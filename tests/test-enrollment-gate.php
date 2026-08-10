@@ -275,6 +275,34 @@ class Tests_Two_Factor_Enrollment_Gate extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * The injection record is only sound if filter_enabled_providers() really
+	 * does run before `two_factor_user_authenticated` in a real login. It
+	 * does, because Two_Factor_Core::validate_login_form_2fa() resolves the
+	 * provider with get_provider_for_user() before firing the action — so
+	 * exercise that exact call rather than trusting a reading of core, and
+	 * without the inject_via_gate() helper that would arm the gate by hand.
+	 *
+	 * If this ever breaks, covered users stop being enrolled entirely: they
+	 * would pass the emailed challenge and nothing would be written.
+	 */
+	public function test_core_resolving_the_provider_arms_the_gate() {
+		add_filter( 'two_factor_enrollment_required', '__return_true' );
+
+		$user = get_user_by( 'id', $this->user_id );
+
+		$provider = Two_Factor_Core::get_provider_for_user( $user );
+
+		$this->assertInstanceOf( 'Two_Factor_Email', $provider );
+
+		Two_Factor_Enrollment_Gate::persist_enrollment( $user, $provider );
+
+		$this->assertSame(
+			array( 'Two_Factor_Email' ),
+			get_user_meta( $this->user_id, Two_Factor_Core::ENABLED_PROVIDERS_USER_META_KEY, true )
+		);
+	}
+
 	public function test_persist_enrollment_ignores_other_providers() {
 		$this->inject_via_gate();
 
