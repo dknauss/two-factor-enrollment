@@ -25,7 +25,14 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		remove_all_filters( 'two_factor_enrollment_required' );
 		remove_all_filters( 'two_factor_providers' );
 		remove_all_filters( 'wp_redirect' );
-		unset( $_REQUEST[ Two_Factor_Enrollment_Onboarding::TOKEN_ARG ], $_REQUEST['redirect_to'] );
+		unset( $_REQUEST[ Two_Factor_Enrollment_Onboarding::TOKEN_ARG ], $_REQUEST['redirect_to'], $_REQUEST['action'] );
+
+		// login_enqueue_scripts() registers and enqueues this handle purely to
+		// carry an inline script; leaving it registered would let one test's
+		// enqueue call read as "already enqueued" in the next.
+		wp_dequeue_script( 'two-factor-enrollment-onboarding' );
+		wp_deregister_script( 'two-factor-enrollment-onboarding' );
+
 		parent::tear_down();
 	}
 
@@ -407,14 +414,20 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	/**
 	 * This screen is the lockout-recovery path. Codes the user cannot save are
 	 * codes the user will not have, so the download link is load-bearing — and
-	 * it has to be the JS-free data: URI, because this plugin ships no scripts
-	 * and phpcs.xml.dist is written on that assumption.
+	 * it has to be the JS-free data: URI, because it must keep working with
+	 * JavaScript disabled or unavailable. This plugin does ship one small
+	 * inline script for click-to-copy (see login_enqueue_scripts()), but
+	 * render_body() itself — the HTML this test inspects — never emits a
+	 * `<script>` tag; the script is injected separately, from a conditional
+	 * hook, only for this screen's own action. It is also styled as the
+	 * primary button, not a bare inline link.
 	 */
 	public function test_render_body_offers_a_download_link_for_the_codes() {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
 
 		$this->assertStringContainsString( 'href="data:application/text;charset=utf-8,', $html );
 		$this->assertStringContainsString( 'download="two-factor-backup-codes.txt"', $html );
+		$this->assertStringContainsString( 'class="button button-primary two-factor-enrollment-download"', $html );
 		$this->assertStringNotContainsString( '<script', $html );
 	}
 
@@ -594,5 +607,185 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( $codes, admin_url() );
 
 		$this->assertStringNotContainsString( 'Save your backup codes', $html );
+	}
+
+	/**
+	 * The codes stay a <ul> for its semantics as a list of ten discrete
+	 * values, but must not read as prose bullets. The class it carries is
+	 * exactly what login_enqueue_scripts()'s CSS targets to strip the
+	 * markers — see test_login_enqueue_scripts_removes_bullets_from_the_codes_list().
+	 */
+	public function test_render_body_codes_are_a_list_carrying_the_no_bullet_style_hook() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( '<ul class="two-factor-enrollment-codes">', $html );
+	}
+
+	/**
+	 * The copy button is an addition, never a replacement: it only appears
+	 * alongside real codes, ships hidden by default (see
+	 * test_login_enqueue_scripts_ships_the_copy_button_hidden_by_default()),
+	 * and is a real <button>, not a click handler bolted onto a <div>.
+	 */
+	public function test_render_body_includes_a_copy_button_when_codes_are_present() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111', 'bbbb2222' ), admin_url() );
+
+		$this->assertStringContainsString( '<button type="button" class="button two-factor-enrollment-copy" hidden', $html );
+		$this->assertStringContainsString( 'data-default-label="Copy codes"', $html );
+		$this->assertStringContainsString( 'data-copied-label="Copied!"', $html );
+	}
+
+	/**
+	 * No codes, nothing to copy: the whole codes section — download link
+	 * included — is already omitted when there are no codes to show, and the
+	 * copy button must not be an exception.
+	 */
+	public function test_render_body_omits_the_copy_button_when_there_are_no_codes() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array(), admin_url() );
+
+		$this->assertStringNotContainsString( 'two-factor-enrollment-copy', $html );
+	}
+
+	/**
+	 * The download link is the fallback the copy button is not: it must be
+	 * a plain, always-present <a href> with no hidden attribute and no
+	 * dependency on the inline script ever running, so it keeps working with
+	 * JavaScript disabled or navigator.clipboard unavailable.
+	 */
+	public function test_render_body_download_link_has_no_hidden_attribute_and_works_without_js() {
+		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
+
+		$download_tag = substr( $html, (int) strpos( $html, '<a class="button button-primary two-factor-enrollment-download"' ) );
+		$download_tag = substr( $download_tag, 0, (int) strpos( $download_tag, '>' ) + 1 );
+
+		$this->assertStringNotContainsString( 'hidden', $download_tag );
+	}
+
+	/**
+	 * login_enqueue_scripts() must be wired up, or none of the CSS/JS below
+	 * this point ever reaches the browser.
+	 */
+	public function test_login_enqueue_scripts_is_registered_on_the_hook() {
+		$this->assertNotFalse(
+			has_action( 'login_enqueue_scripts', array( 'Two_Factor_Enrollment_Onboarding', 'login_enqueue_scripts' ) )
+		);
+	}
+
+	/**
+	 * The whole point of gating on the current action: this hook fires on
+	 * every wp-login.php request, for every action, so a request for the
+	 * ordinary login screen (or any other screen) must leave no trace behind
+	 * — no registered script handle, nothing enqueued.
+	 */
+	public function test_login_enqueue_scripts_does_nothing_off_its_own_screen() {
+		$_REQUEST['action'] = 'login';
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$this->assertFalse( wp_script_is( 'two-factor-enrollment-onboarding', 'registered' ) );
+	}
+
+	/**
+	 * Same guard, the other near-miss: no action at all (the default the
+	 * ordinary login screen is reached with) must also leave nothing
+	 * enqueued.
+	 */
+	public function test_login_enqueue_scripts_does_nothing_without_an_action() {
+		unset( $_REQUEST['action'] );
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$this->assertFalse( wp_script_is( 'two-factor-enrollment-onboarding', 'registered' ) );
+	}
+
+	/**
+	 * On this screen's own action, the inline script must actually be
+	 * enqueued — registering it and never enqueuing would silently ship
+	 * nothing to the browser.
+	 */
+	public function test_login_enqueue_scripts_enqueues_the_inline_script_for_this_screen() {
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$this->assertTrue( wp_script_is( 'two-factor-enrollment-onboarding', 'enqueued' ) );
+	}
+
+	/**
+	 * The inline script must feature-detect navigator.clipboard rather than
+	 * assuming it exists (it is undefined outside a secure context, which
+	 * covers plenty of real WordPress installs on plain HTTP), and must
+	 * reveal the copy button only once that check passes — it ships hidden
+	 * in the markup for exactly this reason.
+	 */
+	public function test_login_enqueue_scripts_ships_the_copy_button_hidden_by_default() {
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$script = implode( "\n", (array) wp_scripts()->get_data( 'two-factor-enrollment-onboarding', 'after' ) );
+
+		$this->assertStringContainsString( 'navigator.clipboard', $script );
+		$this->assertStringContainsString( 'button.hidden = false', $script );
+	}
+
+	/**
+	 * Requirement 2: no bullets on the codes. The list-style reset has to be
+	 * scoped to this screen's own class, or it leaks onto the ordinary login
+	 * and two-factor challenge screens.
+	 */
+	public function test_login_enqueue_scripts_removes_bullets_from_the_codes_list() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertStringContainsString( 'login-action-two_factor_enrollment_onboarding .two-factor-enrollment-codes', $style );
+		$this->assertStringContainsString( 'list-style: none', $style );
+	}
+
+	/**
+	 * Requirement 1: the WordPress.org logo sits directly above one-time
+	 * recovery codes and links off-site; following it loses them for good.
+	 * Hiding it must be scoped to this screen's body class alone.
+	 */
+	public function test_login_enqueue_scripts_hides_the_wordpress_logo_for_this_screen_only() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertMatchesRegularExpression(
+			'/login-action-two_factor_enrollment_onboarding #login h1\s*\{[^}]*display:\s*none/',
+			$style
+		);
+	}
+
+	/**
+	 * Requirement 7: the 320px default login box cramps ten codes and three
+	 * paragraphs into a scroll. The widened container must stay well short
+	 * of the 1000px upstream used for a screen with far more content.
+	 */
+	public function test_login_enqueue_scripts_widens_the_login_container_modestly() {
+		wp_register_style( 'login', false, array(), '1.0' );
+		wp_enqueue_style( 'login' );
+
+		$_REQUEST['action'] = Two_Factor_Enrollment_Onboarding::ACTION;
+
+		Two_Factor_Enrollment_Onboarding::login_enqueue_scripts();
+
+		$style = implode( "\n", (array) wp_styles()->get_data( 'login', 'after' ) );
+
+		$this->assertStringContainsString( 'login-action-two_factor_enrollment_onboarding #login {', $style );
+		$this->assertMatchesRegularExpression( '/max-width:\s*\d+px/', $style );
+		$this->assertStringNotContainsString( 'max-width: 1000px', $style );
 	}
 }
