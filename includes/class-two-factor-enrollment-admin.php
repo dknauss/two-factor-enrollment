@@ -31,7 +31,34 @@ class Two_Factor_Enrollment_Admin {
 	}
 
 	/**
+	 * Whether no policy callback has ever been registered.
+	 *
+	 * This is the far more likely misconfiguration than the Email provider
+	 * being disabled: installing the plugin and never writing a filter. It
+	 * is deliberately keyed off registration, via has_filter(), rather than
+	 * the filter's return value for any particular user. A policy that
+	 * legitimately covers nobody right now — mid-rollout, or scoped to a
+	 * role with no members yet — is a correctly configured install, and
+	 * evaluating the filter would warn about it too, training admins to
+	 * ignore the notice. Only "nobody ever wired this up" should warn.
+	 *
+	 * @return bool
+	 */
+	public static function no_policy_configured() {
+		return ! has_filter( 'two_factor_enrollment_required' );
+	}
+
+	/**
 	 * Print the warning.
+	 *
+	 * When both conditions hold — Email disabled and no policy registered —
+	 * only the Email-unavailable notice is shown. Email being disabled is
+	 * the more fundamental blocker: the gate checks it before it ever
+	 * consults a policy, so even a freshly written filter would still
+	 * enroll no one until Email is re-enabled. Showing the no-policy notice
+	 * alongside it would invite an admin to "fix" the wrong problem first,
+	 * and a second stacked notice restating "nothing is happening" for a
+	 * different reason is noise on top of that.
 	 *
 	 * @return void
 	 */
@@ -47,10 +74,22 @@ class Two_Factor_Enrollment_Admin {
 			return;
 		}
 
-		if ( ! self::should_warn() ) {
+		if ( self::should_warn() ) {
+			self::email_unavailable_notice();
 			return;
 		}
 
+		if ( self::no_policy_configured() ) {
+			self::no_policy_notice();
+		}
+	}
+
+	/**
+	 * The Email-provider-disabled notice.
+	 *
+	 * @return void
+	 */
+	private static function email_unavailable_notice() {
 		?>
 		<div class="notice notice-warning">
 			<p>
@@ -61,6 +100,34 @@ class Two_Factor_Enrollment_Admin {
 			</p>
 			<p>
 				<?php esc_html_e( 'Re-enable the Email provider in the Two Factor settings, or remove this plugin if you intend to manage enrollment another way.', 'two-factor-enrollment' ); ?>
+			</p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * The no-policy-registered notice.
+	 *
+	 * @return void
+	 */
+	private static function no_policy_notice() {
+		?>
+		<div class="notice notice-warning">
+			<p>
+				<strong><?php esc_html_e( 'Two-Factor Enrollment is not enrolling anyone.', 'two-factor-enrollment' ); ?></strong>
+			</p>
+			<p>
+				<?php esc_html_e( 'This plugin is installed and active, but it enrolls no one until something tells it who is covered. By design, nothing is required and no one is enrolled unless a policy answers the two_factor_enrollment_required filter — and no such filter is currently registered on this site.', 'two-factor-enrollment' ); ?>
+			</p>
+			<p>
+				<?php
+				printf(
+					/* translators: 1: opening link tag to the plugin's README, Usage section, 2: closing link tag. */
+					esc_html__( 'See the %1$sUsage%2$s section of the plugin\'s README for how to write one.', 'two-factor-enrollment' ),
+					'<a href="' . esc_url( 'https://github.com/dknauss/two-factor-enrollment#usage' ) . '">', // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Building a translatable string's markup wrapper; the href is escaped with esc_url() above and this is not a raw echo of any request or user data.
+					'</a>' // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static closing tag, no data.
+				);
+				?>
 			</p>
 		</div>
 		<?php
