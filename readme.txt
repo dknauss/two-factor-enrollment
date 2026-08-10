@@ -77,9 +77,15 @@ Hook `two_factor_enrollment_enrolled`, which fires with the user and the provide
 
 == Screenshots ==
 
-1. The one-time screen shown immediately after a user's first two-factor sign-in, with their backup codes ready to download or copy.
+1. The one-time screen shown immediately after a user's first two-factor sign-in: their backup codes ready to download or copy, an authenticator app offered as an optional upgrade, and Continue held back until they confirm the codes are saved.
 
 == Changelog ==
 
 = 0.1.0 =
 * First release.
+* Enrolls covered users during login, before any auth cookie is issued, by pre-enabling the Email provider so Two Factor's own challenge performs the enrollment.
+* Two filters decide who is covered and who may defer: `two_factor_enrollment_required` and `two_factor_enrollment_deferrable`. Both default to false, so installing the plugin alone changes nothing.
+* One-time onboarding screen: ten backup codes, enabled as a working recovery method rather than only displayed, with download and copy, and an optional authenticator-app upgrade. Continue is held back until the codes are acknowledged, and remains a working link where JavaScript does not run.
+* Fires `two_factor_enrollment_enrolled` once per user, and emails a notification, when enrollment is first recorded.
+* Admin notices when the plugin cannot enroll anyone — the Email provider disabled site-wide, or no policy filter registered. The latter also appears in Network Admin.
+* Removes its single user meta key on uninstall, network-wide on multisite.
