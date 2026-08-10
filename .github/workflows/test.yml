@@ -44,16 +44,22 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                php: [ '8.3', '8.1', '7.4', '7.2' ]
-                wp: [ latest ]
+                # Explicit pairs rather than a cross product. Current WordPress
+                # does not run on the oldest PHP the plugin supports, so the
+                # 7.2 floor is exercised against a pinned older release — the
+                # same split the parent Two Factor plugin uses.
                 include:
-                    # One run against WordPress trunk to catch core changes early.
-                    - php: '8.3'
-                      wp: trunk
+                    - { php: '8.3', wp: 'trunk' }
+                    - { php: '8.3', wp: 'latest' }
+                    - { php: '8.1', wp: 'latest' }
+                    - { php: '7.4', wp: 'latest' }
+                    - { php: '7.2', wp: '6.9' }
 
         env:
             WP_ENV_PHP_VERSION: ${{ matrix.php }}
-            WP_ENV_CORE: ${{ matrix.wp == 'trunk' && 'WordPress/WordPress' || '' }}
+            # Must never be empty: wp-env cannot resolve a core source from an
+            # empty string, and docker compose fails before any plugin is activated.
+            WP_ENV_CORE: ${{ matrix.wp == 'trunk' && 'WordPress/WordPress' || format( 'https://wordpress.org/wordpress-{0}.zip', matrix.wp ) }}
 
         steps:
             - name: Checkout
