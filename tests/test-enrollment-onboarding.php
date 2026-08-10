@@ -734,8 +734,20 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 	public function test_render_body_download_link_has_no_hidden_attribute_and_works_without_js() {
 		$html = Two_Factor_Enrollment_Onboarding::render_body( array( 'aaaa1111' ), admin_url() );
 
-		$download_tag = substr( $html, (int) strpos( $html, '<a class="button button-primary two-factor-enrollment-download"' ) );
-		$download_tag = substr( $download_tag, 0, (int) strpos( $download_tag, '>' ) + 1 );
+		$start = strpos( $html, '<a class="button button-primary two-factor-enrollment-download"' );
+
+		// (int) strpos( ... ) silently reads a not-found (false) result as 0
+		// and would slice the *start* of the markup instead of failing, so a
+		// reordered or renamed download link would make this assertion
+		// inspect the wrong text and still pass. Fail loudly instead.
+		$this->assertNotFalse( $start, 'The download link markup was not found in render_body() output.' );
+
+		$download_tag = substr( $html, $start );
+
+		$end = strpos( $download_tag, '>' );
+		$this->assertNotFalse( $end, 'The download link tag was not terminated.' );
+
+		$download_tag = substr( $download_tag, 0, $end + 1 );
 
 		$this->assertStringNotContainsString( 'hidden', $download_tag );
 	}
