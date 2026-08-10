@@ -184,6 +184,48 @@ down and shows an admin notice. Enrolling users into a non-Email provider
 requires configuration after login, which needs a session — see
 [WordPress/two-factor#934](https://github.com/WordPress/two-factor/issues/934).
 
+## Compatibility with Require Email 2FA
+
+[Require Email 2FA](https://github.com/dknauss/Require-Email-2FA) solves the same
+problem a different way, and the two do **not** compose — running both gives you
+Require Email 2FA's behavior and none of this plugin's.
+
+Both hook `two_factor_enabled_providers_for_user` at priority 10. Require Email
+2FA enables the Email provider for every user it covers, so by the time this
+plugin's gate runs, Email is already in the list and the gate correctly leaves it
+alone. The result is that no enrollment is recorded, no onboarding screen is
+shown, no backup codes are generated, and no notification is sent.
+
+They are alternatives rather than layers:
+
+|  | Require Email 2FA | Two-Factor Enrollment |
+|---|---|---|
+| How the second factor arrives | Enabled silently for everyone covered | User completes an emailed challenge at login |
+| Mailbox proven? | No — enabled whether or not mail works | Yes, before enrollment is recorded |
+| Recovery codes | Not provided | Generated, enabled, and shown once |
+| User is told | No | Yes, by email |
+| Rollout friction | None | One extra step at next login |
+
+Require Email 2FA trades consent for a frictionless rollout with no lockout risk
+at switch-on. This plugin trades a login-time interaction for a proven mailbox
+and a working recovery path. Pick the one that suits the site.
+
+To move from one to the other, deactivate Require Email 2FA and express its
+coverage as a policy filter here. Its `force_2fa_excluded_roles` list inverts
+into an inclusion predicate:
+
+```php
+add_filter(
+	'two_factor_enrollment_required',
+	function ( $required, $user ) {
+		$excluded = array( 'subscriber' ); // whatever FORCE_2FA_EXCLUDED_ROLES held
+		return ! array_intersect( $excluded, (array) $user->roles );
+	},
+	10,
+	2
+);
+```
+
 ## Uninstalling
 
 The only state this plugin persists of its own is the single
