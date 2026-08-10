@@ -1121,7 +1121,7 @@ class Two_Factor_Enrollment_Onboarding {
 				 * rules out. Nothing here is selectable: this screen renders
 				 * after the challenge has already been passed, and the
 				 * required path that must never offer a choice is upstream
-				 * of it. See docs/ux-backlog.md, "Deliberately not taken".
+				 * of it. See docs/README.md, "Deliberately not taken".
 				 */
 				?>
 				<p class="two-factor-enrollment-method two-factor-enrollment-method-email">

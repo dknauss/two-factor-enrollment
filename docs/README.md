@@ -6,9 +6,11 @@ nowhere else — in particular why enrollment happens inside the existing login
 challenge rather than after it, and why the required path deliberately offers no
 choice of provider.
 
-They are **historical records, not current documentation.** Where they disagree
-with the code, the code is right. `README.md` in the repository root describes
-what the plugin actually does today.
+The two documents in the table below are **historical records, not current
+documentation.** Where they disagree with the code, the code is right. This file
+is the exception: the sections after the table are maintained, and describe what
+was built rather than what was planned. `README.md` in the repository root
+describes what the plugin does today from a user's point of view.
 
 | Document | Status |
 |---|---|
@@ -75,6 +77,90 @@ that have disabled the Email provider, and the session-lockdown layers that path
 would require, are out of scope. The plugin stands down and shows an
 administrator notice instead. Building them would depend on
 [WordPress/two-factor#934](https://github.com/WordPress/two-factor/issues/934).
+
+## The onboarding screen as shipped
+
+Design §6.2 describes this screen in three bullets: backup codes, a TOTP offer,
+and Continue. What shipped is considerably more, and the reasoning is recorded
+here because most of it is not recoverable from the markup.
+
+The reference screen cited in
+[#813](https://github.com/WordPress/two-factor/issues/813) is **Solid Security's**,
+not LearnDash's — the screenshot was taken on learndash.com, which runs the
+plugin, and Timothy Jacobs, who built the UI, said so in that thread. Its
+affordances transfer; its structure does not, because it runs *before*
+enrollment where the user must choose, and this one runs after.
+
+**Continue is gated behind acknowledging the codes.** The codes are displayed
+exactly once — the compare-and-swap consumes the one-time token before anything
+renders — and Continue was live from page load, so ten recovery codes were one
+click from being lost. The server renders an ordinary working `<a href>` and a
+`hidden` checkbox; the inline script reveals the checkbox and only then arms the
+gate. With JavaScript off the checkbox never appears and Continue behaves as it
+did before. Blocking is `preventDefault()` plus `aria-disabled` and a class,
+never the `href`, so a script that fails halfway leaves a working link rather
+than a dead one. **This constraint is not decorative:** a user who cannot leave
+this screen is locked out by a UX nudge, on the recovery path, with the marker
+already `done` and no second chance at the screen. The gate lives in its own
+IIFE — the clipboard block returns early wherever `navigator.clipboard` is
+absent, which is every plain-HTTP install, and sharing that function body would
+have silently disarmed the gate there.
+
+**Both factors are shown as method rows** — icon, name, state chip — so the
+screen says what the user has before what they could add: Email · Active, and
+Authenticator app · Not set up. That symmetry is what earns the icons their
+place; an icon on the heading alone would be decoration. Icons are inline SVG,
+because the login screen never enqueues dashicons and the plugin ships no asset
+files.
+
+**The authenticator offer is conditional; the Email row is not.** Any provider
+can be removed site-wide through `two_factor_providers`, and offering one that
+has been removed sends the user to a profile screen with nothing on it — worse
+with a chip, since the screen then asserts a state for a method that is not on
+offer. `totp_available()` mirrors the check `maybe_generate_backup_codes()`
+already made for Backup Codes. Email needs no such guard: it is the only factor
+this plugin enrolls anyone in, and the user passed an emailed challenge moments
+earlier in the same request chain.
+
+**The codes copy leads with the instruction.** It was one five-line paragraph
+with the only actionable sentence buried mid-way; it is now an imperative
+followed by a quieter caveat. Every substantive clause survived and the suite
+asserts each individually — the regeneration clause especially, which a review
+added after finding the copy overstated the permanence of the codes.
+
+**The buttons are "Download" and "Copy", not "Download codes" and "Copy codes".**
+They sit directly beneath the list they act on, under a heading already reading
+"Save your backup codes". No `aria-label` restores the longer name: the copy
+button swaps its visible text to "Copied!" and "Couldn't copy", and a fixed
+accessible name would then not contain the visible label, which is what WCAG
+2.5.3 tests and what voice-control users speak.
+
+**Sites can brand the space where the WordPress logo was.**
+`two_factor_enrollment_onboarding_header`, default `''`, run through
+`wp_kses_post()`. The logo was removed because it linked off-site from directly
+above one-time codes that navigating away destroys, so the default stays empty
+and link-free; supplying markup with a link is a decision a site makes for its
+own users.
+
+### Deliberately not taken
+
+**A method chooser.** Solid Security presents Mobile App / Email / Backup Codes
+as a menu. On a *forced* enrollment screen that would undo this plugin's central
+security property: an attacker holding only the password could pick TOTP, enroll
+their own authenticator, and never need the victim's mailbox. The required path
+offers exactly one factor for that reason, and every option added to a
+forced-enrollment chooser is a route around the mailbox requirement. Two method
+rows with states is not this: nothing on the screen is selectable, both
+statements are true, and the required path that must offer no choice is upstream
+of this screen.
+
+**A visible "Skip".** Deferral is a policy decision made in the gate before any
+challenge — a deferring user logs in normally and never sees this screen.
+Rendering a skip would imply an escape the screen does not own.
+
+**A disabled-state method list.** The reference screen shows every method as
+`Disabled` because it runs before enrollment. Ours runs after a challenge has
+been passed, so the equivalent list would be misleading.
 
 ## Related upstream work
 

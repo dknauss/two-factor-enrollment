@@ -1083,7 +1083,8 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 	/*
 	 * ---------------------------------------------------------------------
-	 * The acknowledgement gate (docs/ux-backlog.md item 1).
+	 * The acknowledgement gate. See docs/README.md, "The onboarding
+	 * screen as shipped", for why the no-JS constraint is load-bearing.
 	 *
 	 * The codes are shown exactly once -- claim_onboarding() consumes the
 	 * one-time token before render() prints anything -- and Continue is live
@@ -1312,7 +1313,7 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 	/*
 	 * ---------------------------------------------------------------------
-	 * The upgrade offer's status badge (docs/ux-backlog.md item 2).
+	 * The upgrade offer's status badge and method row.
 	 * ---------------------------------------------------------------------
 	 */
 
@@ -1360,7 +1361,7 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 	/*
 	 * ---------------------------------------------------------------------
-	 * The method icon (docs/ux-backlog.md item 3).
+	 * The method icon.
 	 * ---------------------------------------------------------------------
 	 */
 
@@ -1404,7 +1405,7 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 	/*
 	 * ---------------------------------------------------------------------
-	 * Header branding (docs/ux-backlog.md item 4).
+	 * Header branding.
 	 *
 	 * The WordPress logo was removed from this screen because it linked to
 	 * wordpress.org, directly above one-time codes that navigating away
@@ -1493,7 +1494,7 @@ class Tests_Two_Factor_Enrollment_Onboarding extends WP_UnitTestCase {
 
 	/*
 	 * ---------------------------------------------------------------------
-	 * The codes copy (docs/ux-backlog.md item 5).
+	 * The codes copy.
 	 * ---------------------------------------------------------------------
 	 */
 
