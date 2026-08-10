@@ -1,0 +1,37 @@
+# What a distributed copy of this plugin needs is small:
+# two-factor-enrollment.php, includes/, uninstall.php, readme.txt, LICENSE.
+# Everything else is development tooling, documentation, or wordpress.org
+# repository assets, and does not belong in the installable zip.
+#
+# Patterns are gitignore-style, relative to the plugin root, and consumed by
+# bin/build-dist.sh via `rsync --exclude-from`.
+
+# Directories
+/bin/
+/docs/
+/node_modules/
+/tests/
+/vendor/
+/dist/
+
+# wordpress.org serves screenshots/banners from the plugin's *repository*
+# assets directory, not from inside the installable zip. readme.txt's
+# Screenshots section names files here by convention, not by path — nothing
+# in the plugin loads from this directory at runtime.
+/assets/
+
+# Dotfiles: .git/, .github/, .gitignore, .wp-env.json, .distignore itself,
+# editor/tooling config, etc. None of the five files this plugin ships are
+# dotfiles, so this is safe to be broad.
+.*
+
+# Files
+/composer.json
+/composer.lock
+/package.json
+/package-lock.json
+/phpcs.xml.dist
+/phpunit.xml.dist
+/phpunit-multisite.xml.dist
+/phpunit-no-dependency.xml.dist
+/README.md

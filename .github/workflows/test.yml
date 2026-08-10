@@ -119,3 +119,56 @@ jobs:
             - name: Environment logs on failure
               if: failure()
               run: npm run env logs all -- --no-watch || true
+
+    dist:
+        name: Build and verify the distributable plugin
+        runs-on: ubuntu-24.04
+        timeout-minutes: 15
+        permissions:
+            contents: read
+        steps:
+            - name: Checkout
+              uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+            - name: Setup Node
+              uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+              with:
+                node-version: '20'
+                cache: 'npm'
+
+            - name: Install NPM dependencies
+              run: npm install
+
+            - name: Build dist/
+              run: npm run build
+
+            # A full file-list comparison, not a spot check: catches a file
+            # that quietly ends up in dist/ (a stale .distignore rule, a new
+            # source file nobody remembered to exclude) before it ships.
+            - name: Verify dist/ file list
+              run: npm run verify:dist
+
+            # wp-env pulls WordPress and the Two Factor plugin from the network,
+            # which is the flakiest step in this workflow, so retry it.
+            - name: Start the Docker environment
+              uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
+              with:
+                timeout_minutes: 10
+                max_attempts: 3
+                command: npm run env start
+
+            # Installs dist/ into the environment under its own plugin slug and
+            # activates it alongside Two Factor, proving the built artifact
+            # genuinely works rather than merely containing the right
+            # filenames. Also asserts activation is refused when attempted
+            # before Two Factor is active — two-factor-enrollment.php declares
+            # `Requires Plugins: two-factor`, and wrong activation order is
+            # exactly the class of bug .wp-env.json's plugin order once had,
+            # which the PHPUnit suites cannot catch because tests/bootstrap.php
+            # requires the plugin files directly rather than activating them.
+            - name: Verify dist/ activates
+              run: npm run verify:dist:activation
+
+            - name: Environment logs on failure
+              if: failure()
+              run: npm run env logs all -- --no-watch || true

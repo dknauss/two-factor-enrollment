@@ -6,7 +6,10 @@
 		"env": "wp-env",
 		"composer": "wp-env run tests-cli --env-cwd=wp-content/plugins/two-factor-enrollment composer --",
 		"test": "npm run composer test",
-		"lint": "npm run composer lint"
+		"lint": "npm run composer lint",
+		"build": "bin/build-dist.sh",
+		"verify:dist": "bin/verify-dist-manifest.sh",
+		"verify:dist:activation": "bin/verify-dist-activation.sh"
 	},
 	"devDependencies": {
 		"@wordpress/env": "^10.0.0"

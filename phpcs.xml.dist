@@ -5,6 +5,10 @@
 	<file>.</file>
 	<exclude-pattern>/vendor/*</exclude-pattern>
 	<exclude-pattern>/node_modules/*</exclude-pattern>
+	<!-- dist/ is a build output (copies of already-linted source files); it
+	     does not exist in a fresh checkout and is excluded here only so a
+	     local `npm run lint` run after `npm run build` doesn't double-lint it. -->
+	<exclude-pattern>/dist/*</exclude-pattern>
 
 	<arg name="extensions" value="php"/>
 	<arg name="colors"/>

@@ -1,5 +1,6 @@
 /vendor/
 /node_modules/
+/dist/
 /tests/.phpunit.result.cache
 /tests/.phpunit-no-dependency.result.cache
 /tests/.phpunit-multisite.result.cache
