@@ -1221,8 +1221,7 @@ class Two_Factor_Enrollment_Onboarding {
 						 * is written as an explicit if(), not the `?:` short-ternary
 						 * form, only because the project coding standard forbids
 						 * short ternaries; the behavior is the same either way, and
-						 * on the PHP 7.2 floor both forms are available (`??=` is
-						 * not, and is not used here).
+						 * both forms are available on the PHP 7.4 floor.
 						 */
 						$codes_payload_json = wp_json_encode( self::clipboard_payload( $codes ) );
 

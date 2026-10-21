@@ -3,7 +3,7 @@ Contributors: dknauss
 Tags: two-factor, 2fa, mfa, authentication, security
 Requires at least: 6.5
 Tested up to: 7.0
-Requires PHP: 7.2
+Requires PHP: 7.4
 Requires Plugins: two-factor
 Stable tag: 0.1.0
 License: GPLv2 or later

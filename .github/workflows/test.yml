@@ -30,7 +30,7 @@ jobs:
               run: composer install --no-interaction --prefer-dist
 
             # phpcs.xml.dist layers WordPress-Extra, WordPress-VIP-Go and
-            # PHPCompatibilityWP with testVersion 7.2-, so this one command covers
+            # PHPCompatibilityWP with testVersion 7.4-, so this one command covers
             # both coding standards and the PHP floor.
             - name: PHPCS
               run: composer lint
@@ -44,10 +44,10 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                # Explicit pairs rather than a cross product. Current WordPress
-                # does not run on the oldest PHP the plugin supports, so the
-                # 7.2 floor is exercised against a pinned older release — the
-                # same split the parent Two Factor plugin uses.
+                # Explicit pairs rather than a cross product. The 7.4 PHP floor
+                # runs against current WordPress and against a pinned older
+                # release, so the oldest PHP the plugin supports is also
+                # exercised on an older WordPress it still claims to support.
                 #
                 # `multisite: true` marks the one leg that also runs
                 # tests/multisite/. It is not part of any cross product either:
@@ -61,7 +61,7 @@ jobs:
                     - { php: '8.3', wp: 'latest', multisite: true }
                     - { php: '8.1', wp: 'latest' }
                     - { php: '7.4', wp: 'latest' }
-                    - { php: '7.2', wp: '6.9' }
+                    - { php: '7.4', wp: '6.9' }
 
         env:
             WP_ENV_PHP_VERSION: ${{ matrix.php }}

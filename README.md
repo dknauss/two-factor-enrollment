@@ -253,7 +253,7 @@ world this plugin has already edited.
 
 ## Requirements
 
-WordPress 6.5+, PHP 7.2+, and the Two Factor plugin.
+WordPress 6.5+, PHP 7.4+, and the Two Factor plugin.
 
 ## Limitation
 
