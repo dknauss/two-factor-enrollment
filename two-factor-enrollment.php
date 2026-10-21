@@ -9,7 +9,7 @@
  * License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
  * Text Domain:       two-factor-enrollment
  * Requires at least: 6.5
- * Requires PHP:      7.2
+ * Requires PHP:      7.4
  * Requires Plugins:  two-factor
  *
  * @package Two_Factor_Enrollment
