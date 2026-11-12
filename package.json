@@ -12,6 +12,6 @@
 		"verify:dist:activation": "bin/verify-dist-activation.sh"
 	},
 	"devDependencies": {
-		"@wordpress/env": "^11.17.0"
+		"@wordpress/env": "^12.1.0"
 	}
 }
